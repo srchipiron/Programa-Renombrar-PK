@@ -311,10 +311,12 @@ class Application:
         """Update preview names with current suffix."""
         for item in self.processed_items:
             if item.pk_display:
+                _, ext = os.path.splitext(item.name)
+                ext = ext or ".jpg"
                 if item.is_inside_threshold:
-                    item.new_name_base = f"{item.pk_display}_{suffix}.jpg"
+                    item.new_name_base = f"{item.pk_display}_{suffix}{ext}"
                 else:
-                    item.new_name_base = f"FUERA_{item.pk_display}_{suffix}.jpg"
+                    item.new_name_base = f"FUERA_{item.pk_display}_{suffix}{ext}"
         
         self.tabs.update_preview_data(self.processed_items)
     

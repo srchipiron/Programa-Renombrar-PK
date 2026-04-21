@@ -6,16 +6,16 @@ import shutil
 from typing import List, Optional, Dict, Any, Tuple
 from pathlib import Path
 import concurrent.futures
-from dataclasses import asdict
 import logging
 from datetime import datetime
 
-from .models import PhotoItem, KMLPoint
-from .spatial_calculator import SpatialCalculator
+from .models import PhotoItem
+from .spatial_calculator import SpatialCalculator, METERS_PER_DEGREE
 from .renamer_logic import RenamerLogic
 from .video_extractor import VideoExtractor
 from .config import ConfigManager
 from .events import EventType, emit_event
+from shapely.geometry import Point
 
 logger = logging.getLogger(__name__)
 
@@ -213,12 +213,11 @@ class PhotoProcessingService:
     
     def _get_file_hash(self, file_path: str) -> str:
         """Get quick hash of file for duplicate detection."""
-        import hashlib
         try:
             stat = os.stat(file_path)
             # Use size and mtime as quick hash
             return f"{stat.st_size}_{stat.st_mtime}_{Path(file_path).name}"
-        except Exception:
+        except OSError:
             return Path(file_path).name
     
     def clear_cache(self) -> None:
@@ -249,17 +248,17 @@ class PhotoProcessingService:
             try:
                 # Calculate distance to project axis
                 if self.spatial_calc.project_axis:
-                    item.distance = self.spatial_calc.calculate_distance_to_axis(item.lat, item.lon)
+                    p = Point(item.lon, item.lat)
+                    item.distance = self.spatial_calc.project_axis.distance(p) * METERS_PER_DEGREE
                 
                 # Find nearest named point
                 if self.spatial_calc.named_points:
-                    nearest = self.spatial_calc.find_nearest_named_point(item.lat, item.lon)
-                    if nearest:
-                        item.nearest_name = nearest.name
-                        item.nearest_dist = nearest.distance
+                    nearest_name, nearest_dist = self.spatial_calc.find_nearest_pk_name(item.lat, item.lon)
+                    item.nearest_name = nearest_name
+                    item.nearest_dist = nearest_dist
                 
                 # Calculate PK value
-                item.pk_value = self.spatial_calc.calculate_pk_at_point(item.lat, item.lon)
+                item.pk_value = self.spatial_calc.calculate_pk(item.lat, item.lon)
                 item.pk_display = f"PK{item.pk_value:.3f}"
                 
                 # Check if inside threshold
