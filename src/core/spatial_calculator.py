@@ -19,6 +19,11 @@ class SpatialCalculator:
 
     def load_kml(self, path: str) -> None:
         """Carga un archivo KML, KMZ o GeoJSON."""
+        # Reiniciamos estado para evitar mezclar datos de una carga anterior.
+        self.project_axis = None
+        self.named_points = []
+        self.pk_offset = 0.0
+
         if path.lower().endswith('.geojson') or path.lower().endswith('.json'):
             self._load_geojson(path)
             return
@@ -48,7 +53,9 @@ class SpatialCalculator:
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
             
+        self.project_axis = None
         self.named_points = []
+        self.pk_offset = 0.0
         
         def process_geometry(geom: Dict[str, Any], properties: Dict[str, Any]):
             gtype = geom.get('type')

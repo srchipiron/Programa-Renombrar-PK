@@ -1,11 +1,8 @@
-import os
 import tkinter as tk
-from tkinter import filedialog
 import ttkbootstrap as tb
 from ttkbootstrap.constants import *
 from ttkbootstrap.scrolled import ScrolledFrame
 from ttkbootstrap.tooltip import ToolTip
-from typing import Callable
 
 class SidebarPanel(ScrolledFrame):
     def __init__(self, master, callbacks: dict, state_vars: dict, **kwargs):

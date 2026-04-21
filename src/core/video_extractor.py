@@ -1,8 +1,6 @@
-import os
 import re
 import pysrt
-from typing import List, Callable
-from concurrent.futures import ThreadPoolExecutor
+from typing import List
 
 from .models import PhotoItem
 
@@ -31,7 +29,7 @@ class VideoExtractor:
         # GPS(-1.2345, 38.1234, 15) or [latitude: 38.1234] [longitude: -1.2345]
         # We will use simple regex to find sequences of floats that look like coords
         
-        for idx, sub in enumerate(subs):
+        for sub in subs:
             txt = sub.text.upper()
             
             # Match DJI format [latitude: 38.1234] [longitude: -1.2345]

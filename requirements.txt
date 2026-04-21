@@ -5,3 +5,4 @@ Pillow
 piexif
 lxml
 tkintermapview
+pysrt

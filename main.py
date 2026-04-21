@@ -1,5 +1,4 @@
-from src.ui.main_window import MainWindow
+from src.ui.main_window_new import main
 
 if __name__ == "__main__":
-    app = MainWindow()
-    app.mainloop()
+    main()

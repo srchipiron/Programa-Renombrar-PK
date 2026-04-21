@@ -1,5 +1,7 @@
 import os
 import json
+import re
+import datetime
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import threading
@@ -11,17 +13,32 @@ from PIL import ImageGrab
 from src.core.spatial_calculator import SpatialCalculator
 from src.core.renamer_logic import RenamerLogic
 from src.core.video_extractor import VideoExtractor
-from src.core.models import PhotoItem
 
 from src.ui.sidebar import SidebarPanel
 from src.ui.tabs import TabsPanel
 
 CONFIG_FILE = "config.json"
+MONTH_NAMES_ES = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+]
+MONTH_CODES_ES = [
+    "ENE", "FEB", "MAR", "ABR", "MAY", "JUN",
+    "JUL", "AGO", "SEP", "OCT", "NOV", "DIC"
+]
 
 class MainWindow(tb.Window):
     def __init__(self):
+        self._now = datetime.datetime.now()
+        self._month_name = MONTH_NAMES_ES[self._now.month - 1]
+        self._month_code = MONTH_CODES_ES[self._now.month - 1]
+        self._year_full = self._now.year
+        self._year_short = str(self._now.year)[-2:]
+        self.default_suffix = f"[PK]-{self._month_code}{self._year_short}"
+        self.app_title = f"📍 Renombrador PKS {self._month_name} {self._year_full}"
+
         super().__init__(themename="darkly")
-        self.title("📍 Renombrador PKS Febrero 2026")
+        self.title(self.app_title)
         self.geometry("1200x800")
         self.minsize(1000, 700)
         self._center_window()
@@ -38,11 +55,12 @@ class MainWindow(tb.Window):
             'backup': tk.BooleanVar(value=True)
         }
         
-        self.image_data = [] # List[PhotoItem]
+        self.image_data = []
         self.stats_data = {}
         
         self.is_processing = False
         self.cancel_requested = False
+        self._last_auto_threshold_ms = 0
         
         self.load_config()
         self._build_ui()
@@ -56,16 +74,30 @@ class MainWindow(tb.Window):
         self.geometry(f'+{x}+{y}')
 
     def load_config(self):
+        suffix_value = self.default_suffix
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, 'r') as f:
                     conf = json.load(f)
                     self.vars['folder'].set(conf.get("last_folder", ""))
                     self.vars['kml'].set(conf.get("last_kml", ""))
-                    self.vars['suffix'].set(conf.get("last_suffix", ""))
+                    loaded_suffix = conf.get("last_suffix", "")
+                    if loaded_suffix:
+                        suffix_value = loaded_suffix
                     self.vars['threshold'].set(conf.get("threshold", 30.0))
                     self.vars['backup'].set(conf.get("create_backup", True))
-            except: pass
+            except Exception:
+                # Si el JSON está corrupto, se ignora y se usan defaults.
+                pass
+        if self._should_update_month_suffix(suffix_value):
+            suffix_value = self.default_suffix
+        self.vars['suffix'].set(suffix_value)
+
+    def _should_update_month_suffix(self, suffix: str) -> bool:
+        if not suffix or not suffix.strip():
+            return True
+        clean = suffix.strip().upper()
+        return bool(re.match(r"^\[PK\]-[A-Z]{3}\d{2}$", clean))
 
     def save_config(self):
         conf = {
@@ -77,12 +109,14 @@ class MainWindow(tb.Window):
         }
         try:
             with open(CONFIG_FILE, 'w') as f: json.dump(conf, f, indent=4)
-        except: pass
+        except Exception:
+            # Evita romper el flujo por errores de IO de config.
+            pass
 
     def _build_ui(self):
         header = tb.Frame(self, padding=10)
         header.pack(fill=X)
-        tb.Label(header, text="📍 Renombrador PKS Febrero 2026", font=("Segoe UI", 20, "bold"), foreground="#3498db").pack(side=LEFT)
+        tb.Label(header, text=self.app_title, font=("Segoe UI", 20, "bold"), foreground="#3498db").pack(side=LEFT)
         self.status_lbl = tb.Label(header, text="● Listo", font=("Segoe UI", 12), foreground="#2ecc71")
         self.status_lbl.pack(side=RIGHT)
 
@@ -144,7 +178,7 @@ class MainWindow(tb.Window):
         def _load_srt():
             self.update_ui_state(True)
             self.tabs.clear_preview()
-            self.tabs.select(1) # Pestaña log
+            self.tabs.select(2) # Pestaña log
             
             # Reutilizamos image_data pero con fotogramas artificiales del video
             self.image_data = self.video_extractor.parse_srt(f)
@@ -174,6 +208,9 @@ class MainWindow(tb.Window):
             self.status_lbl.config(text="● Listo", foreground="#2ecc71")
 
     def start_analysis(self):
+        if self.is_processing:
+            return
+
         fld, kml = self.vars['folder'].get(), self.vars['kml'].get()
         if not os.path.isdir(fld): return messagebox.showerror("Error", "Carpeta inválida.")
         if not os.path.isfile(kml): return messagebox.showerror("Error", "Archivo Geoespacial inválido.")
@@ -183,7 +220,7 @@ class MainWindow(tb.Window):
         self.progress['value'] = 0
         self.tabs.clear_preview()
         self.image_data = []
-        self.tabs.select(1)
+        self.tabs.select(2)
         
         threading.Thread(target=self._analysis_task, args=(fld, kml), daemon=True).start()
 
@@ -194,7 +231,7 @@ class MainWindow(tb.Window):
             
             pts = len(self.spatial_calc.named_points)
             if pts: self.log(f"Matriz cargada: {pts} PKs extraídos.", "success")
-            else: self.log("Adviso: No se extrajeron PKs con etiqueta clara.", "warning")
+            else: self.log("Aviso: No se extrajeron PKs con etiqueta clara.", "warning")
                 
             def prog_cb(c, t, m):
                 def up():
@@ -228,6 +265,10 @@ class MainWindow(tb.Window):
 
     def auto_threshold(self):
         if not self.stats_data: return
+        now_ms = int(datetime.datetime.now().timestamp() * 1000)
+        if now_ms - self._last_auto_threshold_ms < 500:
+            return
+        self._last_auto_threshold_ms = now_ms
         s = self.stats_data['suggested']
         self.vars['threshold'].set(round(s, 2))
         self.log(f"Umbral calibrado a {s:.2f}m vía red {self.stats_data['method']}", "success")
@@ -244,7 +285,8 @@ class MainWindow(tb.Window):
         items_inside = [i for i in valid_items if i.is_inside_threshold]
         
         for item in items_inside:
-            self.tabs.insert_preview_row(item.name, item.new_name_base + ".jpg", item.pk_display, item.distance)
+            ext = os.path.splitext(item.name)[1].lower() or ".jpg"
+            self.tabs.insert_preview_row(item.name, item.new_name_base + ext, item.pk_display, item.distance, item.path)
                 
         t_len = len(self.image_data)
         in_len = len(items_inside)
@@ -346,21 +388,36 @@ class MainWindow(tb.Window):
             self.log(f"Error generando PDF: {e}", "error")
 
     def confirm_and_process(self):
+        if self.is_processing:
+            return
+
         items = [i for i in self.image_data if i.is_inside_threshold]
         if not items: return messagebox.showwarning("Atención", "Espectro vacío.")
-            
-        if not messagebox.askyesno("Confirmar", f"¿Renombrar {len(items)} imágenes?"): return
+
+        plan = self.renamer.get_rename_plan(items, self.vars['folder'].get())
+        confirm_msg = (
+            f"Se procesarán {plan['total']} archivos.\n"
+            f"Renombrables efectivos: {plan['effective']}\n"
+            f"Conflictos detectados (destino ya existe): {plan['conflicts']}\n"
+            f"Sin cambio (mismo nombre): {plan['unchanged']}\n\n"
+            "¿Deseas continuar?"
+        )
+        if not messagebox.askyesno("Confirmar Renombrado", confirm_msg):
+            return
         
         self.update_ui_state(True)
         self.cancel_requested = False
         self.progress['value'] = 0
-        self.tabs.select(1)
+        self.tabs.select(2)
         
         fld = self.vars['folder'].get()
         bck = self.vars['backup'].get()
         threading.Thread(target=self._process_task, args=(items, fld, bck), daemon=True).start()
 
     def confirm_and_restore(self):
+        if self.is_processing:
+            return
+
         fld = self.vars['folder'].get()
         if not os.path.isdir(fld): 
             return messagebox.showerror("Error", "Carpeta inválida.")
@@ -379,10 +436,11 @@ class MainWindow(tb.Window):
     def _restore_task(self, fld):
         self.log("Iniciando reversión de nombres...", "warning")
         
-        def progres_cb(completed: int, total: int, msg: str):
-            self.after(0, lambda: self._update_progress(completed, total, msg))
+        def progress_cb(completed: int, total: int, msg: str):
+            self.after(0, lambda: self.progress.configure(value=completed, maximum=max(1, total)))
+            self.log(msg, "info")
             
-        success, msg = self.renamer.undo_last_rename_from_csv(fld, progress_cb=progres_cb)
+        success, msg = self.renamer.undo_last_rename_from_csv(fld, progress_cb=progress_cb)
         
         self.after(0, lambda: self._on_restore_finished(success, msg))
         
@@ -408,22 +466,36 @@ class MainWindow(tb.Window):
             if c % 10 == 0 or c == t: self.log(m, "info")
             
         try:
-            self.renamer.process_images(items, output_folder, backup, cb, lambda: self.cancel_requested)
+            result = self.renamer.process_images(items, output_folder, backup, cb, lambda: self.cancel_requested)
             if self.cancel_requested:
                 self.log("Corte de hilo inyectado por el usuario.", "warning")
             else:
+                if result:
+                    self.log(
+                        f"Resumen proceso -> OK: {result.get('ok', 0)} | "
+                        f"Errores: {result.get('errors', 0)} | "
+                        f"Omitidos: {result.get('skipped', 0)}",
+                        "info"
+                    )
                 self.log("Transacción de IO completada. CSV emitido.", "success")
         except Exception as e:
-            self.log(f"Fallo grave en disco: {e}", "error")
+            err_msg = str(e)
+            self.log(f"Fallo grave en disco: {err_msg}", "error")
+            self.after(0, lambda m=err_msg: messagebox.showerror("Error de proceso", f"Se produjo un error durante el procesado:\n{m}"))
             
-        self.after(0, lambda: self.update_ui_state(False))
+        self.after(0, self._finish_processing)
+
+    def _finish_processing(self):
+        self.update_ui_state(False)
+        self.progress['value'] = 0
+        self.sidebar.btn_cancel.config(state=NORMAL)
 
     def cancel_operation(self):
         if self.is_processing:
             self.cancel_requested = True
             self.sidebar.btn_cancel.config(state=DISABLED)
             self.status_lbl.config(text="● Interrumpiendo IO...", foreground="#e74c3c")
-            self.log("Injectando señal SIGTERM al procesador...", "warning")
+            self.log("Inyectando señal de cancelación al procesador...", "warning")
 
 if __name__ == "__main__":
     app = MainWindow()

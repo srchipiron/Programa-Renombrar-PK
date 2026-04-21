@@ -1,7 +1,6 @@
 import os
 import re
 import csv
-import math
 import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image
@@ -11,6 +10,11 @@ from typing import Dict, List, Optional, Callable, Any, Tuple
 from .spatial_calculator import SpatialCalculator, METERS_PER_DEGREE
 from .models import PhotoItem
 from shapely.geometry import Point
+
+try:
+    from piexif import helper as piexif_helper
+except Exception:
+    piexif_helper = None
 
 MAX_WORKERS = 4
 KMEANS_MIN_SEPARATION = 30.0
@@ -91,29 +95,28 @@ class RenamerLogic:
             for f in files:
                 if f.lower().endswith(('.jpg', '.jpeg', '.png')):
                     image_files.append(os.path.join(root, f))
+
+        image_files.sort()
         total = len(image_files)
-        
-        items: List[PhotoItem] = []
-        distances: List[float] = []
-        
-        for idx, path in enumerate(image_files):
-            if progress_cb:
-                progress_cb(idx + 1, total, f"Analizando {os.path.basename(path)}...")
-                
+
+        if total == 0:
+            return {'min': 0, 'max': 0, 'mean': 0, 'suggested': 30.0, 'method': 'default', 'items': []}
+
+        def _analyze_single(path: str) -> Optional[Tuple[PhotoItem, float]]:
             exif_data = self.get_exif_data_from_image(path)
-            if not exif_data: continue
-                
+            if not exif_data:
+                return None
+
             lat, lon, date_str, time_str = exif_data
             nearest_name, nearest_dist = self.spatial_calc.find_nearest_pk_name(lat, lon)
-            
+
             dist_to_use = nearest_dist if nearest_name else float('inf')
-            
             if not nearest_name and self.spatial_calc.project_axis:
                 p = Point(lon, lat)
                 dist_to_use = self.spatial_calc.project_axis.distance(p) * METERS_PER_DEGREE
-                
+
             pk_val = self.spatial_calc.calculate_pk(lat, lon)
-            
+
             item = PhotoItem(
                 path=path,
                 name=os.path.basename(path),
@@ -126,9 +129,36 @@ class RenamerLogic:
                 distance=dist_to_use,
                 pk_value=pk_val
             )
-            items.append(item)
-            if dist_to_use != float('inf'):
-                distances.append(dist_to_use)
+            return item, dist_to_use
+
+        items: List[PhotoItem] = []
+        distances: List[float] = []
+        completed = 0
+
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            future_to_path = {executor.submit(_analyze_single, path): path for path in image_files}
+            for future in as_completed(future_to_path):
+                path = future_to_path[future]
+                completed += 1
+
+                if progress_cb:
+                    progress_cb(completed, total, f"Analizando {os.path.basename(path)}...")
+
+                try:
+                    result = future.result()
+                except Exception:
+                    result = None
+
+                if not result:
+                    continue
+
+                item, dist_to_use = result
+                items.append(item)
+                if dist_to_use != float('inf'):
+                    distances.append(dist_to_use)
+
+        # Mantener orden estable para UI y secuencias posteriores.
+        items.sort(key=lambda x: x.name.lower())
                 
         if not distances:
             return {'min': 0, 'max': 0, 'mean': 0, 'suggested': 30.0, 'method': 'default', 'items': items}
@@ -228,7 +258,12 @@ class RenamerLogic:
                     return 
                     
                 exif_dict = piexif.load(img.info.get("exif", b""))
-                exif_dict["Exif"][piexif.ExifIFD.UserComment] = piexif.helper.UserComment.dump(pk_text, encoding="unicode")
+                exif_dict.setdefault("Exif", {})
+                if piexif_helper is not None:
+                    exif_dict["Exif"][piexif.ExifIFD.UserComment] = piexif_helper.UserComment.dump(pk_text, encoding="unicode")
+                else:
+                    # Fallback seguro cuando piexif.helper no está disponible.
+                    exif_dict["Exif"][piexif.ExifIFD.UserComment] = pk_text.encode("utf-8")
                 exif_bytes = piexif.dump(exif_dict)
                 img.save(path, exif=exif_bytes)
         except Exception as e:
@@ -239,7 +274,7 @@ class RenamerLogic:
             base_folder: str, 
             create_backup: bool, 
             progress_cb: Callable[[int, int, str], None], 
-            check_cancel: Callable[[], bool]) -> None:
+            check_cancel: Callable[[], bool]) -> Dict[str, int]:
             
         backup_folder = os.path.join(base_folder, "_backup_originales")
         if create_backup:
@@ -247,24 +282,16 @@ class RenamerLogic:
             
         csv_path = os.path.join(base_folder, "reporte_renombrado.csv")
         
-        # Agrupar por base (para la secuencia)
-        pk_groups: Dict[str, List[PhotoItem]] = {}
-        for item in items:
-            if not item.is_inside_threshold: continue
-            if item.new_name_base not in pk_groups:
-                pk_groups[item.new_name_base] = []
-            pk_groups[item.new_name_base].append(item)
-            
-        jobs = []
-        for pk_key, group in pk_groups.items():
-            group.sort(key=lambda x: x.name)
-            for seq, item in enumerate(group, start=1):
-                new_name = f"{item.new_name_base}-{seq:03d}.jpg"
-                jobs.append((item, new_name))
+        jobs = self._build_rename_jobs(items)
         
         total = len(jobs)
         completed = 0
         results_csv = []
+        stats = {"ok": 0, "errors": 0, "skipped": 0}
+
+        if total == 0:
+            progress_cb(0, 0, "No hay archivos válidos para procesar.")
+            return stats
         
         def _process_single(job: Tuple[PhotoItem, str]):
             if check_cancel(): return None
@@ -273,19 +300,46 @@ class RenamerLogic:
             orig_path = item.path
             target_dir = os.path.dirname(orig_path)
             new_path = os.path.join(target_dir, new_name)
-            
-            if create_backup:
-                rel_dir = os.path.relpath(target_dir, base_folder)
-                bck_target = os.path.join(backup_folder, rel_dir)
-                os.makedirs(bck_target, exist_ok=True)
-                shutil.copy2(orig_path, os.path.join(bck_target, item.name))
-                
-            if orig_path != new_path:
-                os.rename(orig_path, new_path)
-                
-            self.write_metadata(new_path, item.new_name_base)
-            
-            return {'original': item.name, 'nuevo': new_name, 'pk': item.pk_display, 'distancia': f"{item.distance:.2f}"}
+
+            try:
+                if create_backup:
+                    rel_dir = os.path.relpath(target_dir, base_folder)
+                    bck_target = os.path.join(backup_folder, rel_dir)
+                    os.makedirs(bck_target, exist_ok=True)
+                    shutil.copy2(orig_path, os.path.join(bck_target, item.name))
+
+                # Evita sobrescribir un archivo existente distinto.
+                if orig_path != new_path and os.path.exists(new_path):
+                    return {
+                        'original': item.name,
+                        'nuevo': new_name,
+                        'pk': item.pk_display,
+                        'distancia': f"{item.distance:.2f}",
+                        'status': 'skipped',
+                        'error': f"Destino ya existe: {new_name}"
+                    }
+
+                if orig_path != new_path:
+                    os.rename(orig_path, new_path)
+
+                self.write_metadata(new_path, item.new_name_base)
+
+                return {
+                    'original': item.name,
+                    'nuevo': new_name,
+                    'pk': item.pk_display,
+                    'distancia': f"{item.distance:.2f}",
+                    'status': 'ok'
+                }
+            except Exception as e:
+                return {
+                    'original': item.name,
+                    'nuevo': new_name,
+                    'pk': item.pk_display,
+                    'distancia': f"{item.distance:.2f}",
+                    'status': 'error',
+                    'error': str(e)
+                }
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             future_to_job = {executor.submit(_process_single, job): job for job in jobs}
@@ -294,18 +348,85 @@ class RenamerLogic:
                 if check_cancel():
                     executor.shutdown(wait=False, cancel_futures=True)
                     break 
-                res = future.result()
-                if res:
-                    results_csv.append(res)
-                    
+                try:
+                    res = future.result()
+                except Exception as e:
+                    res = {
+                        'original': 'desconocido',
+                        'nuevo': 'desconocido',
+                        'pk': '',
+                        'distancia': '',
+                        'status': 'error',
+                        'error': str(e)
+                    }
+
+                if res and res.get('status') == 'ok':
+                    stats["ok"] += 1
+                    results_csv.append({
+                        'original': res.get('original', ''),
+                        'nuevo': res.get('nuevo', ''),
+                        'pk': res.get('pk', ''),
+                        'distancia': res.get('distancia', '')
+                    })
+                elif res and res.get('status') == 'skipped':
+                    stats["skipped"] += 1
+                elif res and res.get('status') == 'error':
+                    stats["errors"] += 1
+
                 completed += 1
-                progress_cb(completed, total, f"Procesando: {res['nuevo'] if res else 'Cancelado'}")
+                if res and res.get('status') == 'skipped':
+                    progress_cb(completed, total, f"Omitido: {res.get('error', 'conflicto de nombre')}")
+                elif res and res.get('status') == 'error':
+                    progress_cb(completed, total, f"Error: {res.get('error', 'fallo desconocido')}")
+                else:
+                    progress_cb(completed, total, f"Procesando: {res['nuevo'] if res else 'Cancelado'}")
                     
         if results_csv:
             with open(csv_path, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.DictWriter(f, fieldnames=['original', 'nuevo', 'pk', 'distancia'])
                 writer.writeheader()
                 writer.writerows(results_csv)
+        return stats
+
+    def _build_rename_jobs(self, items: List[PhotoItem]) -> List[Tuple[PhotoItem, str]]:
+        """Genera el plan de renombrado respetando secuencias por base."""
+        pk_groups: Dict[str, List[PhotoItem]] = {}
+        for item in items:
+            if not item.is_inside_threshold:
+                continue
+            if item.new_name_base not in pk_groups:
+                pk_groups[item.new_name_base] = []
+            pk_groups[item.new_name_base].append(item)
+
+        jobs: List[Tuple[PhotoItem, str]] = []
+        for _, group in pk_groups.items():
+            group.sort(key=lambda x: x.name)
+            for seq, item in enumerate(group, start=1):
+                original_ext = os.path.splitext(item.name)[1].lower() or ".jpg"
+                new_name = f"{item.new_name_base}-{seq:03d}{original_ext}"
+                jobs.append((item, new_name))
+        return jobs
+
+    def get_rename_plan(self, items: List[PhotoItem], base_folder: str) -> Dict[str, int]:
+        """Devuelve un pre-chequeo de seguridad antes de renombrar."""
+        jobs = self._build_rename_jobs(items)
+        conflicts = 0
+        unchanged = 0
+        for item, new_name in jobs:
+            orig_path = item.path
+            target_dir = os.path.dirname(orig_path)
+            new_path = os.path.join(target_dir, new_name)
+            if orig_path == new_path:
+                unchanged += 1
+            elif os.path.exists(new_path):
+                conflicts += 1
+
+        return {
+            "total": len(jobs),
+            "conflicts": conflicts,
+            "unchanged": unchanged,
+            "effective": max(0, len(jobs) - conflicts),
+        }
 
     def undo_last_rename_from_csv(self, base_folder: str, progress_cb: Optional[Callable[[int, int, str], None]] = None) -> Tuple[bool, str]:
         """
@@ -350,6 +471,10 @@ class RenamerLogic:
                 orig_path = os.path.join(target_dir, orig_name)
                 
                 try:
+                    if os.path.exists(orig_path) and orig_path != current_path:
+                        if progress_cb and completed % 5 == 0:
+                            progress_cb(completed, total, f"Omitido (ya existe): {orig_name}")
+                        continue
                     os.rename(current_path, orig_path)
                     reversed_count += 1
                 except Exception:
