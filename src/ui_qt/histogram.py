@@ -12,6 +12,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
+from ..core.renamer_logic import histogram_axis_upper
+
 
 class DistanceHistogram(QWidget):
     BINS = 24
@@ -20,6 +22,8 @@ class DistanceHistogram(QWidget):
     GRID_COLOR = QColor("#1e293b")
     THRESHOLD_COLOR = QColor("#60a5fa")
     TEXT_COLOR = QColor("#94a3b8")
+    #: Photos beyond the axis (take-off, another site): counted, never hidden.
+    OVERFLOW_COLOR = QColor("#7c2d12")
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -49,24 +53,27 @@ class DistanceHistogram(QWidget):
             painter.end()
             return
 
-        max_d = max(self._distances)
-        # Round the upper bound to something visually friendly.
-        if max_d <= 0:
-            max_d = 1.0
-        upper = max(self._threshold * 2.0, max_d)
-        # Clamp to avoid an absurd scale dominated by a single outlier.
-        upper = min(upper, max_d * 1.1 if max_d > self._threshold else upper)
+        # The axis follows the decision (threshold + robust spread), not the
+        # maximum: a job with photos 1.5 km off the corridor would otherwise
+        # squeeze every corridor photo into the first bin.
+        upper = histogram_axis_upper(self._distances, self._threshold)
         if upper <= 0:
             upper = 1.0
 
         bin_width = upper / self.BINS
         counts = [0] * self.BINS
+        overflow = 0
         for d in self._distances:
+            if d > upper:
+                overflow += 1
+                continue
             idx = min(int(d / bin_width), self.BINS - 1)
             counts[idx] += 1
 
-        max_count = max(counts) or 1
-        bar_w = rect.width() / self.BINS
+        max_count = max(max(counts), overflow) or 1
+        # The overflow bar takes the last slot so nothing is silently dropped.
+        slots = self.BINS + (1 if overflow else 0)
+        bar_w = rect.width() / slots
 
         for i, count in enumerate(counts):
             if count == 0:
@@ -81,9 +88,17 @@ class DistanceHistogram(QWidget):
             y = rect.bottom() - h
             painter.fillRect(int(x), int(y), int(max(1, bar_w - 1)), int(h), color)
 
+        if overflow:
+            h = (overflow / max_count) * (rect.height() - 4)
+            x = rect.left() + self.BINS * bar_w
+            painter.fillRect(
+                int(x), int(rect.bottom() - h), int(max(1, bar_w - 1)), int(h),
+                self.OVERFLOW_COLOR,
+            )
+
         # Threshold marker
         if 0 < self._threshold < upper:
-            x = rect.left() + (self._threshold / upper) * rect.width()
+            x = rect.left() + (self._threshold / upper) * (self.BINS * bar_w)
             pen = QPen(self.THRESHOLD_COLOR, 2, Qt.DashLine)
             painter.setPen(pen)
             painter.drawLine(int(x), rect.top(), int(x), rect.bottom())
@@ -94,4 +109,9 @@ class DistanceHistogram(QWidget):
         painter.drawText(rect.left(), rect.bottom() + 14, "0")
         painter.drawText(int(rect.right() - 28), rect.bottom() + 14, f"{upper:.0f} m")
         painter.drawText(6, rect.top() + 10, f"n={len(self._distances)}")
+        if overflow:
+            painter.setPen(self.OVERFLOW_COLOR)
+            painter.drawText(
+                rect.left() + 4, rect.top() + 10, f"+{overflow} > {upper:.0f} m"
+            )
         painter.end()

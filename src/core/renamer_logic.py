@@ -331,6 +331,44 @@ def compute_suggested_threshold(
         "p90": p90,
     }
 
+def histogram_axis_upper(
+    distances: List[float],
+    threshold: float,
+    *,
+    tukey_multiplier: float = DEFAULT_TUKEY_MULTIPLIER,
+    floor_m: float = 10.0,
+) -> float:
+    """Upper bound of the distance axis so the decision zone stays legible.
+
+    A real delivery mixes a tight corridor cluster with a handful of photos
+    kilometres away (take-off, a different site). Scaling the axis to the
+    maximum then puts every corridor photo in the first bin: measured on a
+    238-photo job whose distances span 0–1495 m with 215 of them under 20 m,
+    the whole histogram collapsed into a single bar.
+
+    The bound follows the decision instead — the threshold and the robust
+    spread of the sample — and whatever lies beyond is meant to be counted in
+    an overflow bin, never dropped. Never exceeds the largest distance, so the
+    plot has no empty tail.
+    """
+    cleaned = [float(d) for d in distances if d is not None and d != float("inf")]
+    if not cleaned:
+        return max(floor_m, float(threshold) * 1.5)
+
+    max_d = max(cleaned)
+    candidates = [float(threshold) * 1.5, floor_m]
+    if len(cleaned) >= 4:
+        ordered = sorted(cleaned)
+        q1 = _percentile(ordered, 0.25)
+        q3 = _percentile(ordered, 0.75)
+        candidates.append(q3 + tukey_multiplier * (q3 - q1))
+    else:
+        candidates.append(max_d)
+
+    upper = max(candidates)
+    return min(upper, max_d) if max_d > 0 else max(floor_m, upper)
+
+
 def _convert_dms_to_dd(dms, ref) -> float:
     """Convert an EXIF DMS triplet into a signed decimal degree."""
     if len(dms) < 3:

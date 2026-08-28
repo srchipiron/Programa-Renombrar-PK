@@ -7,6 +7,7 @@ from src.core.renamer_logic import (
     AUTO_THRESHOLD_MAX,
     AUTO_THRESHOLD_MIN,
     compute_suggested_threshold,
+    histogram_axis_upper,
 )
 
 
@@ -116,3 +117,34 @@ class TestComputeSuggestedThreshold(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HistogramAxisTests(unittest.TestCase):
+    """The distance axis must follow the decision, not the worst outlier.
+
+    Measured on a 238-photo delivery: distances span 0–1495 m with 215 photos
+    under 20 m, so scaling to the maximum gave 62 m bins and collapsed every
+    corridor photo into the first bar.
+    """
+
+    def test_outliers_do_not_flatten_the_corridor(self) -> None:
+        distances = [i * 0.09 for i in range(215)] + [1300 + i * 9 for i in range(23)]
+        upper = histogram_axis_upper(distances, 15.2)
+        self.assertLess(upper, 60.0)
+        self.assertGreater(upper, 15.2)
+        # Los lejanos no se pierden: quedan para la barra de desbordamiento.
+        self.assertEqual(sum(1 for d in distances if d > upper), 23)
+
+    def test_never_leaves_an_empty_tail(self) -> None:
+        distances = [1.0, 2.0, 3.0, 4.0]
+        self.assertLessEqual(histogram_axis_upper(distances, 500.0), max(distances))
+
+    def test_threshold_stays_visible(self) -> None:
+        distances = [0.5] * 50
+        self.assertGreaterEqual(histogram_axis_upper(distances, 0.4), 0.4)
+
+    def test_empty_sample_falls_back_to_the_threshold(self) -> None:
+        self.assertGreaterEqual(histogram_axis_upper([], 30.0), 30.0)
+
+    def test_tiny_sample_uses_the_maximum(self) -> None:
+        self.assertEqual(histogram_axis_upper([5.0, 40.0], 10.0), 40.0)
