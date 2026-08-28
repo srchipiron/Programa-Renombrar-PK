@@ -740,7 +740,6 @@ class RenamerLogic:
         self.spatial_calc = spatial_calc
         self.max_workers = max(1, int(max_workers))
         self.tukey_multiplier = float(tukey_multiplier)
-        self._gps_cache: Dict[str, Any] = {}
         self.viaduct_pks: Set[str] = set()
 
     def set_viaduct_pks(self, pks: List[str]) -> None:
@@ -785,17 +784,6 @@ class RenamerLogic:
     # ------------------------------------------------------------------
     # EXIF extraction (tolerant + persistent cache)
     # ------------------------------------------------------------------
-    def get_exif_data_from_image(self, path: str) -> Optional[Tuple[float, float, str, str]]:
-        if path in self._gps_cache:
-            return self._gps_cache[path]
-
-        data = self._get_full_exif(path)
-        if data is None:
-            self._gps_cache[path] = None
-            return None
-        self._gps_cache[path] = (data["lat"], data["lon"], data["date"], data["time"])
-        return self._gps_cache[path]
-
     def _get_full_exif(self, path: str) -> Optional[Dict[str, Any]]:
         """Return the extended EXIF payload used by analysis + cache."""
         try:
@@ -987,11 +975,6 @@ class RenamerLogic:
         stats["items"] = items
         stats["duplicates"] = duplicates
         return stats
-
-    def sanitize_template(self, template: str) -> str:
-        """Back-compat helper (legacy UI). Returns the template as-is,
-        rendering is now done by :func:`render_template`."""
-        return _normalize_template(template)[:120] if template else ""
 
     def sanitize_pk_name(self, name: str) -> str:
         s = re.sub(r"[^\w\+\-\s]", "", name)

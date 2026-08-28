@@ -16,10 +16,8 @@ import io
 import json
 import logging
 import os
-import tempfile
-import webbrowser
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Sequence
 
 import sys
 
@@ -190,18 +188,3 @@ class MapManager:
             html = html.replace(token, value)
         return html
 
-    @staticmethod
-    def generate_and_open_map(
-        points: list,
-        kml_coords: list,
-        threshold: float,
-        output_folder: Optional[str],
-        kml_points: list,
-    ) -> str:
-        """Build the HTML, write it to a temp file and open it in the browser."""
-        html_content = MapManager.build_map_html(points, kml_coords, threshold, kml_points)
-        fd, path = tempfile.mkstemp(suffix=".html", prefix="visor_pks_")
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(html_content)
-        webbrowser.open(Path(path).as_uri())
-        return path

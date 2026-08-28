@@ -3,7 +3,6 @@ Centralized logging configuration for the application.
 """
 import logging
 import logging.handlers
-import os
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -100,10 +99,6 @@ class LoggingManager:
         """Get a logger instance for a specific module."""
         return logging.getLogger(name)
     
-    def set_level(self, level: str) -> None:
-        """Update logging level."""
-        self.log_level = getattr(logging, level.upper(), logging.INFO)
-        logging.getLogger().setLevel(self.log_level)
         
         # Update file handler level
         for handler in logging.getLogger().handlers:
@@ -121,8 +116,3 @@ def initialize_logging(log_dir: str = "logs", log_level: str = "INFO") -> None:
 def get_logger(name: str) -> logging.Logger:
     """Get a logger instance."""
     return LoggingManager.get_logger(name)
-
-def set_log_level(level: str) -> None:
-    """Update the logging level."""
-    if _logging_manager:
-        _logging_manager.set_level(level)
