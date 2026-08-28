@@ -114,6 +114,49 @@ class TestMapComponent(unittest.TestCase):
         start = html.find("var photos = ") + len("var photos = ")
         self.assertEqual(json.loads(html[start : html.find(";", start)])[0]["name"], name)
 
+    def test_basemaps_do_not_require_an_api_key(self) -> None:
+        """CARTO started watermarking keyless tiles with "API KEY REQUIRED".
+
+        It answered 200, so nothing failed loudly: the operator just got a
+        map covered in watermarks. The replacements (IGN PNOA, Esri, OSM) are
+        all keyless.
+        """
+        template = self._template()
+        self.assertNotIn("cartocdn", template)
+        self.assertNotIn("apikey", template.lower())
+        self.assertIn("www.ign.es/wmts/pnoa-ma", template)
+        # The official orthophoto is the default: it is the only base map that
+        # stays sharp at the zoom used to check a single photo.
+        self.assertIn("pnoaLayer.addTo(map)", template)
+
+    def test_layers_keep_zooming_past_their_native_level(self) -> None:
+        """Without maxNativeZoom the map goes blank when zoomed onto a photo."""
+        template = self._template()
+        # Toda capa de teselas declara hasta donde sirve de verdad.
+        self.assertEqual(
+            template.count("maxNativeZoom:"), template.count("L.tileLayer(")
+        )
+
+    def test_search_panel_is_a_leaflet_control(self) -> None:
+        """As a floating div it covered the expanded layer control.
+
+        Measured in a browser: 186 px of overlap, and elementFromPoint over
+        the control returned the search INPUT — the panel was stealing the
+        clicks, so that part of the layer switcher could not be used.
+        """
+        template = self._template()
+        self.assertIn("map.addControl(new SearchControl())", template)
+        self.assertIn("L.DomEvent.disableClickPropagation(panel)", template)
+        # No longer positioned by hand over Leaflet's own corner.
+        self.assertNotIn(".search-panel { position: absolute", template)
+
+    @staticmethod
+    def _template() -> str:
+        return (
+            Path(__file__).resolve().parent.parent
+            / "src" / "assets" / "map_template.html"
+        ).read_text(encoding="utf-8")
+
     def test_template_escapes_values_before_building_html(self) -> None:
         """Escaping the JSON is not enough: the popups build DOM from strings.
 

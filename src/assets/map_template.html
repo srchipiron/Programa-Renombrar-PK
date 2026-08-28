@@ -34,7 +34,10 @@
         }
 
         .stats-panel { position: absolute; top: 16px; left: 56px; min-width: 260px; }
-        .search-panel { position: absolute; top: 16px; right: 60px; width: 280px; padding: 10px 14px; }
+        /* Se coloca como control de Leaflet en la esquina superior derecha:
+           sin position:absolute, para que Leaflet lo apile con el control de
+           capas en vez de taparlo y robarle los clics. */
+        .search-panel { width: 280px; padding: 10px 14px; }
         .legend-panel { position: absolute; bottom: 24px; right: 16px; font-size: 13px; max-width: 260px; }
 
         .panel-title {
@@ -173,33 +176,57 @@
         var map = L.map('map', { zoomControl: false }).setView([__CENTER_LAT__, __CENTER_LON__], 14);
         L.control.zoom({ position: 'bottomleft' }).addTo(map);
 
-        // Capas cartográficas oficiales y globales
+        // Capas cartográficas oficiales y globales.
+        // maxNativeZoom = ultimo nivel que el servicio sirve de verdad; por
+        // encima Leaflet reescala la ultima tesela en vez de dejar el mapa en
+        // blanco, que es lo que pasaba al acercarse a una foto concreta.
         var pnoaLayer = L.tileLayer('https://www.ign.es/wmts/pnoa-ma?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=OI.OrthoimageCoverage&STYLE=default&TILEMATRIXSET=GoogleMapsCompatible&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg', {
-          attribution: '© Instituto Geográfico Nacional (IGN) - PNOA', maxZoom: 20
+          attribution: '© Instituto Geográfico Nacional (IGN) - PNOA', maxZoom: 21, maxNativeZoom: 20
         });
 
         var satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-          attribution: '© Esri World Imagery', maxZoom: 19
+          attribution: '© Esri World Imagery', maxZoom: 21, maxNativeZoom: 19
         });
-        var darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-          attribution: '© OpenStreetMap, © CARTO', maxZoom: 19
+        // Sustituye a CARTO dark, que desde 2026 marca las teselas con
+        // "API KEY REQUIRED" si no se envia clave. Esri Canvas es libre y sin
+        // clave, pero solo llega a z16 de forma nativa.
+        var darkLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+          attribution: '© Esri, © OpenStreetMap contributors', maxZoom: 21, maxNativeZoom: 16
         });
-        var osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '© OpenStreetMap', maxZoom: 19
+        var osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap', maxZoom: 21, maxNativeZoom: 19
         });
 
-        // Capa por defecto
-        darkLayer.addTo(map);
-        darkLayer.on('tileerror', function() {
-          document.getElementById('offline-banner').style.display = 'block';
+        // Por defecto la ortofoto oficial: es la que deja ver la obra y la
+        // unica (con el satelite de Esri) nitida al zoom al que se revisa una
+        // foto. El aviso de "sin conexion" lo dispara cualquier capa.
+        pnoaLayer.addTo(map);
+        [pnoaLayer, satelliteLayer, darkLayer, osmLayer].forEach(function(capa) {
+          capa.on('tileerror', function() {
+            document.getElementById('offline-banner').style.display = 'block';
+          });
         });
 
         L.control.layers({
-          "🌙 Carto Dark": darkLayer,
           "🇪🇸 Ortofoto PNOA / IGN (España)": pnoaLayer,
           "🛰️ Satélite ESRI": satelliteLayer,
+          "🌙 Mapa oscuro (Esri Canvas)": darkLayer,
           "🗺️ OpenStreetMap": osmLayer
         }, null, { position: 'topright' }).addTo(map);
+
+        // El buscador deja de ser un div flotante: como control de Leaflet,
+        // Leaflet lo apila con el de capas en lugar de solaparlo (antes tapaba
+        // 186 px del control desplegado y le robaba los clics).
+        var SearchControl = L.Control.extend({
+          options: { position: 'topright' },
+          onAdd: function() {
+            var panel = document.querySelector('.search-panel');
+            L.DomEvent.disableClickPropagation(panel);
+            L.DomEvent.disableScrollPropagation(panel);
+            return panel;
+          }
+        });
+        map.addControl(new SearchControl());
 
         var kmlCoords = __KML_COORDS_JSON__;
         if (kmlCoords.length > 1) {

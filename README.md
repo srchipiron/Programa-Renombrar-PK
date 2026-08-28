@@ -230,6 +230,13 @@ python -m pytest tests/ --cov=src --cov-report=html
 ## 📝 Registro de Cambios
 
 ### v3.4 - Undo fiable, parseo KML sin lastre y contrato de dependencias
+- 🗺️ **Mapa base arreglado**: CARTO empezó a marcar las teselas sin clave con
+  «API KEY REQUIRED». Por defecto pasa a la **ortofoto oficial PNOA del IGN**, con
+  Satélite ESRI, mapa oscuro (Esri Canvas) y OSM como alternativas — todas sin API key
+- 🗺️ **El mapa ya no se queda en blanco al acercar**: cada capa declara `maxNativeZoom`,
+  así que Leaflet reescala en vez de pedir teselas que el servicio no sirve
+- 🐛 **El buscador tapaba el control de capas**: 186 px de solape con el control
+  desplegado y le robaba los clics. Ahora es un control de Leaflet y se apila con él
 - 🐛 **La barra de estado dimensionaba la ventana**: con el resumen de cobertura (~300
   caracteres) el `QLabel` pedía 3576 px, así que tras cada análisis la ventana se
   agrandaba sola de 1400 a 1932 px y ya no podía encogerse (en un portátil de 1920 se
@@ -257,7 +264,7 @@ python -m pytest tests/ --cov=src --cov-report=html
   `TypeError` a mitad de análisis
 - 🧪 **Dialectos KML fijados**: carpetas anidadas, `MultiGeometry`, prefijos de namespace,
   KMZ, eje sintetizado desde placemarks, documento vacío y XML malformado
-- 🧪 282 tests (antes 246)
+- 🧪 285 tests (antes 246)
 - 📄 ADR-008, ADR-009 y ADR-010
 
 ### v3.3 - Análisis sin cuellos O(n²) y QA de cobertura contra la traza

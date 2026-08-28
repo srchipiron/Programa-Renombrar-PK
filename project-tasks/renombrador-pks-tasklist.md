@@ -2,13 +2,21 @@
 
 **Spec:** `project-specs/renombrador-pks-setup.md`  
 **QA gate:** `python -m pytest tests/ -q --tb=short` (QT_QPA_PLATFORM=offscreen)  
-**Última integración:** 282 tests + 20 subtests — PASS (fase 6 / T28–T34)
+**Última integración:** 285 tests + 20 subtests — PASS (fase 6 / T28–T35)
 
 ---
 
 ### [x] T1 — Copia de seguridad por defecto y umbral 30 m
 - `create_backup: true`, `threshold: 30.0`, spinner máx. 250 m
-- **Agente:** ui-designer + code-reviewer
+- **Agente:** ui-designer
+
+### [x] T35 — Visor: capas base y solape del buscador
+- CARTO exige API key desde 2026 (responde 200 con la tesela marcada); por defecto
+  ahora ortofoto PNOA/IGN, y `maxNativeZoom` en las cuatro capas
+- Buscador convertido en control de Leaflet: sin solape (medido: 186 px) ni robo de clics
+- Verificado en navegador real con Leaflet incrustado: teselas de `www.ign.es`,
+  `elementFromPoint` sobre el control devuelve la etiqueta de capa
+- **Agente:** ui-designer + reality-checker + code-reviewer
 
 ### [x] T2 — Restaurar sesión con KML
 - `_restore_last_session` recarga carpeta y `spatial_calc.load_kml`
