@@ -19,7 +19,7 @@ import os
 import tempfile
 import webbrowser
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 import sys
 
@@ -65,6 +65,29 @@ _VENDOR_FILES = {
 def _asset_uri(path: Path) -> str:
     """Return a ``file://`` URL ready to drop into an ``href``/``src``."""
     return path.resolve().as_uri()
+
+
+def _json_for_script(value: Any) -> str:
+    """Serialise ``value`` so it is safe inside a ``<script>`` block.
+
+    The payload carries KML placemark names and file paths, and KML files come
+    from the client. A name containing ``</script>`` would close the block and
+    turn the rest of the document into markup: at best the map silently fails
+    to load, at worst arbitrary JS runs in the operator's browser.
+
+    ``<``, ``>`` and ``&`` only ever occur inside JSON *strings* (the
+    structural characters are ``{}[],:"`` plus numbers and literals), so
+    escaping them globally is safe and leaves the decoded value identical.
+    U+2028/U+2029 are valid in JSON but are line terminators in JavaScript.
+    """
+    return (
+        json.dumps(value)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
 
 
 class MapManager:
@@ -155,9 +178,9 @@ class MapManager:
             "__THRESHOLD__":      f"{threshold:g}",
             "__CENTER_LAT__":     f"{center_lat:.6f}",
             "__CENTER_LON__":     f"{center_lon:.6f}",
-            "__PHOTOS_JSON__":    json.dumps(photos_data),
-            "__KML_COORDS_JSON__": json.dumps(list(kml_coords)),
-            "__KML_POINTS_JSON__": json.dumps(list(kml_points)),
+            "__PHOTOS_JSON__":    _json_for_script(photos_data),
+            "__KML_COORDS_JSON__": _json_for_script(list(kml_coords)),
+            "__KML_POINTS_JSON__": _json_for_script(list(kml_points)),
         }
         for token, asset_path in _VENDOR_FILES.items():
             replacements[token] = _asset_uri(asset_path)

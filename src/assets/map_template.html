@@ -158,6 +158,18 @@
     <script src="__MARKERCLUSTER_JS__"></script>
     <script>
       (function(){
+        // Los nombres de placemark vienen del KML del cliente y los nombres de
+        // fichero del disco del operador: son entrada no confiable. Todo lo que
+        // se concatene dentro de HTML pasa por aqui.
+        function esc(value) {
+          return String(value === null || value === undefined ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        }
+
         var map = L.map('map', { zoomControl: false }).setView([__CENTER_LAT__, __CENTER_LON__], 14);
         L.control.zoom({ position: 'bottomleft' }).addTo(map);
 
@@ -202,7 +214,7 @@
 
         kmlPoints.forEach(function(pt) {
           L.marker([pt.lat, pt.lon], {icon: kmlIcon}).addTo(map)
-           .bindPopup('<div style="background:rgba(15,23,42,0.95);color:#fff;padding:8px 12px;border-radius:6px;"><b>📍 Hito:</b> ' + pt.name + '</div>');
+           .bindPopup('<div style="background:rgba(15,23,42,0.95);color:#fff;padding:8px 12px;border-radius:6px;"><b>📍 Hito:</b> ' + esc(pt.name) + '</div>');
         });
 
         var photos = __PHOTOS_JSON__;
@@ -229,16 +241,16 @@
           var marker = L.marker([photo.lat, photo.lon], {icon: iconToUse});
           var distColor = photo.is_inside ? '#10b981' : '#ef4444';
           var altBadge = photo.rel_altitude ? '<div class="metric-card"><span class="metric-label">Altitud Relativa</span><span class="metric-value">' + photo.rel_altitude.toFixed(1) + ' m</span></div>' : '';
-          var viewBadge = photo.view_label ? '<span style="display:inline-block;padding:2px 6px;border-radius:4px;background:#1e293b;font-size:11px;margin-left:6px;">' + photo.view_label + '</span>' : '';
+          var viewBadge = photo.view_label ? '<span style="display:inline-block;padding:2px 6px;border-radius:4px;background:#1e293b;font-size:11px;margin-left:6px;">' + esc(photo.view_label) + '</span>' : '';
 
           var imgSrc = photo.img_url || photo.thumbnail || '';
-          var imgHtml = imgSrc ? '<div class="popup-image-container" onclick="openFullscreen(\'' + imgSrc + '\')"><img src="' + imgSrc + '" loading="lazy" alt="Preview"/></div>' : '';
+          var imgHtml = imgSrc ? '<div class="popup-image-container" onclick="openFullscreen(&#39;' + esc(imgSrc) + '&#39;)"><img src="' + esc(imgSrc) + '" loading="lazy" alt="Preview"/></div>' : '';
 
           var popupHTML = ''
-            + '<div class="popup-header"><h4>' + photo.name + viewBadge + '</h4></div>'
+            + '<div class="popup-header"><h4>' + esc(photo.name) + viewBadge + '</h4></div>'
             + imgHtml
             + '<div class="popup-body">'
-            + '<div class="metric-card"><span class="metric-label">Hito Geográfico (P.K.)</span><span class="metric-value">' + photo.pk + '</span></div>'
+            + '<div class="metric-card"><span class="metric-label">Hito Geográfico (P.K.)</span><span class="metric-value">' + esc(photo.pk) + '</span></div>'
             + '<div class="metric-card"><span class="metric-label">Desviación (Distancia)</span><span class="metric-value" style="color: ' + distColor + ';">' + photo.distance.toFixed(2) + ' m</span></div>'
             + altBadge
             + '</div>';
@@ -281,9 +293,23 @@
           if (matches.length === 0) {
             resBox.innerHTML = '<div class="search-item" style="color:#94a3b8;">Sin coincidencias</div>';
           } else {
-            resBox.innerHTML = matches.map(function(m){
-              return '<div class="search-item" onclick="focusPhotoByName(\'' + m.name + '\')"><b>' + m.name + '</b><br><small style="color:#94a3b8;">' + m.pk + ' (' + m.distance.toFixed(1) + ' m)</small></div>';
-            }).join('');
+            // Construido con el DOM: un nombre con comillas ya no puede
+            // escapar del atributo onclick.
+            resBox.textContent = '';
+            matches.forEach(function(m){
+              var row = document.createElement('div');
+              row.className = 'search-item';
+              var title = document.createElement('b');
+              title.textContent = m.name;
+              var meta = document.createElement('small');
+              meta.style.color = '#94a3b8';
+              meta.textContent = m.pk + ' (' + m.distance.toFixed(1) + ' m)';
+              row.appendChild(title);
+              row.appendChild(document.createElement('br'));
+              row.appendChild(meta);
+              row.addEventListener('click', function(){ window.focusPhotoByName(m.name); });
+              resBox.appendChild(row);
+            });
           }
           resBox.style.display = 'block';
         };

@@ -2,7 +2,7 @@
 
 **Spec:** `project-specs/renombrador-pks-setup.md`  
 **QA gate:** `python -m pytest tests/ -q --tb=short` (QT_QPA_PLATFORM=offscreen)  
-**Última integración:** 273 tests + 19 subtests — PASS (fase 6 / T28–T31)
+**Última integración:** 277 tests + 19 subtests — PASS (fase 6 / T28–T33)
 
 ---
 
@@ -119,6 +119,19 @@
 - `PhotoItem.virtual` + ruta sintética única; excluidos del plan, contados en cobertura
 - `SessionStore` deja de descartarlos por no existir en disco (regresión detectada por test)
 - **Agente:** senior-developer + reality-checker
+
+### [x] T32 — `config.json` fuera del control de versiones
+- Estaba en `.gitignore` pero versionado desde el commit inicial: publicaba rutas UNC
+  internas y nombres de cliente
+- Desversionado; `ConfigManager` ya lo regenera desde `config.example.json`
+- **Agente:** code-reviewer
+
+### [x] T33 — Entrada no confiable del KML en el visor (ADR-010)
+- Reproducido: `</script>` en un placemark rompe el bloque de script; `<img onerror>`
+  ejecuta al renderizar el popup; una comilla escapa del `onclick` de la búsqueda
+- Payload escapado + `esc()` en la plantilla + lista de búsqueda construida con DOM
+- Verificado en navegador real: título intacto, cero `img[onerror]`
+- **Agente:** security-auditor
 
 ---
 
