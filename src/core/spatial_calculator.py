@@ -725,6 +725,16 @@ class SpatialCalculator:
             start = self._official_pk_from_geom(0.0)
             end = self._official_pk_from_geom(float(self._axis_metric.length))
             lo, hi = (start, end) if start <= end else (end, start)
+            cal = self._pk_calibration
+            if len(cal) >= 2:
+                # Outside the outermost anchors the official PK is only an
+                # extrapolation of a local slope. A production trace whose
+                # LineString began 16.7 km before its first PK placemark turned
+                # that into an invented PK-1+965 and a 16.7 km "coverage hole".
+                # Coverage is only claimed where the chainage is calibrated.
+                officials = [pk for _geom, pk in cal]
+                lo = max(lo, min(officials))
+                hi = min(hi, max(officials))
             if hi - lo > 0:
                 return lo, hi
         values = [pk for _name, pk in self.pk_placemarks()]

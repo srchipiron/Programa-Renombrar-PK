@@ -66,5 +66,11 @@ whole trace.
 - Trade-off: the adaptive threshold means the same job can report a different
   `gap_min_m` between runs if the photo set changes. The value is always shown
   next to the gap count, and CSV/GeoJSON record it.
+- The extent is **clamped to the calibrated anchors**. Observed on the Torre
+  Pacheco trace: 179 anchors spanning PK-18+653 to PK-36+400 over a LineString
+  that starts 16.7 km earlier. Extrapolating the calibration backwards invented
+  a PK-1+965 and reported those 16.7 km as the largest "coverage gap", pushing
+  the real 400–760 m holes down the list and reading 29 % coverage instead of
+  57 %. Beyond the anchors there is no official chainage to claim coverage of.
 - Risk: `pk_tolerance_m` is a constant (50 m). Corridors with a different post
   spacing may want it configurable; deferred until a job needs it.

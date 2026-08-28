@@ -75,6 +75,61 @@ class TraceExtentTests(unittest.TestCase):
             self.assertAlmostEqual(lo, 10000.0, delta=1.0)
             self.assertAlmostEqual(hi, 11000.0, delta=1.0)
 
+    def test_extent_never_extrapolates_beyond_the_anchors(self) -> None:
+        """The axis often runs past the stretch that has PK placemarks.
+
+        Measured on a production trace (UTE Torre Pacheco): 179 anchors from
+        PK-18+653 to PK-36+400 over a LineString that starts 16.7 km earlier.
+        Extrapolating the calibration backwards invented a PK-1+965 and then
+        reported those 16.7 km as a coverage hole, which pushed the real
+        400–760 m holes down the list and dropped coverage from 57 % to 29 %.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            lat0 = 40.4170
+            lon_a = -3.7100
+            metros = METERS_PER_DEGREE * math.cos(math.radians(lat0))
+            # Eje de 2000 m; anclas solo en el tramo 850–1700 m.
+            lon_fin = lon_a + 2000.0 / metros
+            features = [
+                {
+                    "type": "Feature",
+                    "properties": {},
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [[lon_a, lat0], [lon_fin, lat0]],
+                    },
+                }
+            ]
+            for nombre, metro in (("PK-10+000", 850.0), ("PK-10+850", 1700.0)):
+                features.append(
+                    {
+                        "type": "Feature",
+                        "properties": {"name": nombre},
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [lon_a + metro / metros, lat0],
+                        },
+                    }
+                )
+            path = os.path.join(tmp, "axis.geojson")
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump({"type": "FeatureCollection", "features": features}, fh)
+
+            calc = SpatialCalculator()
+            calc.load_kml(path)
+
+            lo, hi = calc.axis_pk_extent()
+            self.assertAlmostEqual(lo, 10000.0, delta=2.0)
+            self.assertAlmostEqual(hi, 10850.0, delta=2.0)
+
+    def test_a_flight_short_of_the_anchors_still_reports_a_head_gap(self) -> None:
+        """Clamping must not hide a real hole inside the calibrated stretch."""
+        report = coverage_from_distances(
+            [10600, 10650, 10700], gap_min_m=100.0, trace_extent=(10000.0, 10850.0)
+        )
+        kinds = [g.kind for g in report.gaps]
+        self.assertIn(GAP_HEAD, kinds)
+
     def test_extent_falls_back_to_placemarks_without_axis(self) -> None:
         calc = SpatialCalculator()
         calc.add_named_points(
