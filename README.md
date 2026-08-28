@@ -230,6 +230,15 @@ python -m pytest tests/ --cov=src --cov-report=html
 ## 📝 Registro de Cambios
 
 ### v3.4 - Undo fiable, parseo KML sin lastre y contrato de dependencias
+- 📍 **Vertederos en su propio fichero**: `landmark_kmls` permite leer `Vertederos.kml`
+  **además** de la traza (antes `load_kml` reseteaba el estado y era imposible). Solo se
+  fusionan los placemarks cuyo nombre no es un PK, así que apuntar por error al KML de
+  traza no convierte 300 hitos en vertederos
+- 📍 **Alias de carpeta para un vertedero suelto**: un grupo de un miembro ya vale, así
+  que el `TP01` del KML se entrega en la carpeta `TP-01` que pide el cliente
+- 🐛 **La extensión de traza ya no se extrapola**: en Torre Pacheco el eje empieza 16,7 km
+  antes de la primera ancla y se inventaba un PK-1+965, reportándolo como el mayor hueco.
+  El trabajo de agosto pasa de 29 % a **57 %** de cobertura y de 8 huecos a **7 reales**
 - 🗺️ **Mapa base arreglado**: CARTO empezó a marcar las teselas sin clave con
   «API KEY REQUIRED». Por defecto pasa a la **ortofoto oficial PNOA del IGN**, con
   Satélite ESRI, mapa oscuro (Esri Canvas) y OSM como alternativas — todas sin API key
@@ -264,7 +273,7 @@ python -m pytest tests/ --cov=src --cov-report=html
   `TypeError` a mitad de análisis
 - 🧪 **Dialectos KML fijados**: carpetas anidadas, `MultiGeometry`, prefijos de namespace,
   KMZ, eje sintetizado desde placemarks, documento vacío y XML malformado
-- 🧪 285 tests (antes 246)
+- 🧪 295 tests (antes 246)
 - 📄 ADR-008, ADR-009 y ADR-010
 
 ### v3.3 - Análisis sin cuellos O(n²) y QA de cobertura contra la traza
