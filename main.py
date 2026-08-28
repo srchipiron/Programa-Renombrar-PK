@@ -1,4 +1,5 @@
-from src.ui.main_window_new import main
+"""Application entry point — launches the PySide6/Qt UI."""
+from src.ui_qt.app import main
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

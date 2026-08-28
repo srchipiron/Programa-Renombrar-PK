@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <title>Visor Cartográfico - Renombrador PKS 2026</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="__LEAFLET_CSS__"/>
+    <link rel="stylesheet" href="__MARKERCLUSTER_CSS__"/>
+    <link rel="stylesheet" href="__MARKERCLUSTER_DEFAULT_CSS__"/>
+    <style>
+        :root {
+            --primary: #3b82f6; --success: #10b981; --danger: #ef4444; --warning: #f59e0b;
+            --bg-glass: rgba(15, 23, 42, 0.85); --text-light: #f8fafc;
+            --border-glass: rgba(255, 255, 255, 0.12);
+        }
+        body, html { height: 100%; margin: 0; padding: 0;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            background: #0f172a; color: var(--text-light);
+            overflow: hidden;
+        }
+        #map { height: 100%; width: 100%; z-index: 1; }
+
+        .glass-panel {
+            background: var(--bg-glass);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border-glass);
+            border-radius: 14px;
+            color: var(--text-light);
+            padding: 14px 18px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            z-index: 1000;
+            transition: transform 0.2s ease, opacity 0.2s ease;
+        }
+
+        .stats-panel { position: absolute; top: 16px; left: 56px; min-width: 260px; }
+        .search-panel { position: absolute; top: 16px; right: 60px; width: 280px; padding: 10px 14px; }
+        .legend-panel { position: absolute; bottom: 24px; right: 16px; font-size: 13px; max-width: 260px; }
+
+        .panel-title {
+            font-weight: 700; font-size: 15px; margin-bottom: 10px;
+            background: linear-gradient(135deg, #60a5fa, #a78bfa);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            border-bottom: 1px solid var(--border-glass); padding-bottom: 6px;
+        }
+
+        .stat-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 13px; }
+        .stat-value { font-weight: 700; font-size: 1.1em; }
+
+        .circle-icon { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; box-shadow: 0 0 6px rgba(0,0,0,0.5); }
+        .c-green { background: var(--success); box-shadow: 0 0 8px var(--success); }
+        .c-red   { background: var(--danger);  box-shadow: 0 0 8px var(--danger); }
+        .c-blue  { background: var(--primary); box-shadow: 0 0 8px var(--primary); }
+
+        #map-search {
+            width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.4);
+            border: 1px solid var(--border-glass); border-radius: 8px;
+            padding: 8px 12px; color: #fff; font-size: 13px; outline: none;
+        }
+        #map-search:focus { border-color: var(--primary); }
+        #search-results {
+            display: none; margin-top: 8px; max-height: 220px; overflow-y: auto;
+            background: rgba(11, 18, 32, 0.95); border-radius: 8px; border: 1px solid var(--border-glass);
+        }
+        .search-item {
+            padding: 8px 10px; font-size: 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .search-item:hover { background: rgba(59, 130, 246, 0.25); }
+
+        .leaflet-popup-content-wrapper {
+            background: rgba(15, 23, 42, 0.96);
+            backdrop-filter: blur(10px);
+            color: #f1f5f9;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.15);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+            padding: 0;
+            overflow: hidden;
+        }
+        .leaflet-popup-tip { background: rgba(15, 23, 42, 0.96); }
+        .leaflet-popup-content { margin: 0; min-width: 290px; }
+
+        .popup-header { padding: 10px 14px; background: rgba(255,255,255,0.06); border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .popup-header h4 { margin: 0; font-weight: 600; font-size: 15px; color: #fff; word-break: break-all; }
+
+        .popup-image-container { position: relative; width: 100%; height: 180px; overflow: hidden; background: #000; cursor: zoom-in; }
+        .popup-image-container img {
+            width: 100%; height: 100%; object-fit: cover;
+            transition: transform 0.3s ease;
+        }
+        .popup-image-container:hover img { transform: scale(1.04); }
+
+        .popup-body { padding: 12px 14px; }
+        .metric-card { background: rgba(255,255,255,0.05); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; }
+        .metric-label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; display: block; }
+        .metric-value { font-size: 14px; font-weight: 600; }
+
+        #fullscreen-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(2, 6, 23, 0.96); z-index: 9999; justify-content: center; align-items: center;
+            opacity: 0; transition: opacity 0.25s ease;
+        }
+        #fullscreen-overlay img { max-width: 92%; max-height: 92%; box-shadow: 0 20px 60px rgba(0,0,0,0.8); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); transform: scale(0.96); transition: transform 0.25s ease; }
+        #fullscreen-overlay.active { display: flex; opacity: 1; cursor: zoom-out; }
+        #fullscreen-overlay.active img { transform: scale(1); }
+
+        .marker-cluster-small  { background-color: rgba(167, 139, 250, 0.6); }
+        .marker-cluster-small  div { background-color: rgba(139, 92, 246, 0.85); color: white; font-weight: 600; box-shadow: 0 0 12px rgba(139, 92, 246, 0.5); border: 2px solid rgba(255,255,255,0.5); }
+        .marker-cluster-medium { background-color: rgba(96, 165, 250, 0.6); }
+        .marker-cluster-medium div { background-color: rgba(59, 130, 246, 0.85); color: white; border: 2px solid rgba(255,255,255,0.5); }
+
+        .offline-banner {
+            position: absolute; top: 10px; right: 10px;
+            background: rgba(239, 68, 68, 0.88); color: white;
+            padding: 6px 12px; border-radius: 6px; z-index: 1500;
+            font-size: 12px; display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <div class="glass-panel stats-panel">
+        <div class="panel-title">📡 Analytics del Escaneo</div>
+        <div class="stat-row"><span>Imágenes Detectadas</span> <span class="stat-value">__STATS_TOTAL__</span></div>
+        <div class="stat-row">
+            <span><span class="circle-icon c-green"></span> Dentro (&lt; __THRESHOLD__ m)</span>
+            <span class="stat-value" style="color: var(--success);">__STATS_INSIDE__</span>
+        </div>
+        <div class="stat-row">
+            <span><span class="circle-icon c-red"></span> Fuera (&gt; __THRESHOLD__ m)</span>
+            <span class="stat-value" style="color: var(--danger);">__STATS_OUTSIDE__</span>
+        </div>
+    </div>
+
+    <div class="glass-panel search-panel">
+        <input type="text" id="map-search" placeholder="🔍 Buscar PK o foto..." oninput="searchMap(this.value)" />
+        <div id="search-results"></div>
+    </div>
+
+    <div class="glass-panel legend-panel">
+        <div class="panel-title" style="font-size: 14px;">Leyenda</div>
+        <div class="stat-row"><span><span class="circle-icon c-green"></span> Fotografías Validadas</span></div>
+        <div class="stat-row"><span><span class="circle-icon c-red"></span> Fuera de Umbral</span></div>
+        <div class="stat-row"><span><span class="circle-icon c-blue"></span> Puntos Kilométricos (PK)</span></div>
+        <div style="margin-top:8px; border-top:1px solid var(--border-glass); padding-top:8px; display:flex; align-items:center;">
+            <div style="width:22px; height:4px; background:var(--primary); margin-right:8px; border-radius:2px; box-shadow: 0 0 8px var(--primary);"></div> Traza Principal
+        </div>
+    </div>
+
+    <div id="offline-banner" class="offline-banner">Sin conexión: mapas base remotos no disponibles. Los puntos del proyecto funcionan offline.</div>
+
+    <div id="fullscreen-overlay" onclick="closeFullscreen()">
+        <img id="fullscreen-img" src="" alt="Zoom">
+    </div>
+
+    <script src="__LEAFLET_JS__"></script>
+    <script src="__MARKERCLUSTER_JS__"></script>
+    <script>
+      (function(){
+        var map = L.map('map', { zoomControl: false }).setView([__CENTER_LAT__, __CENTER_LON__], 14);
+        L.control.zoom({ position: 'bottomleft' }).addTo(map);
+
+        // Capas cartográficas oficiales y globales
+        var pnoaLayer = L.tileLayer('https://www.ign.es/wmts/pnoa-ma?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=OI.OrthoimageCoverage&STYLE=default&TILEMATRIXSET=GoogleMapsCompatible&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg', {
+          attribution: '© Instituto Geográfico Nacional (IGN) - PNOA', maxZoom: 20
+        });
+
+        var satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+          attribution: '© Esri World Imagery', maxZoom: 19
+        });
+        var darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+          attribution: '© OpenStreetMap, © CARTO', maxZoom: 19
+        });
+        var osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap', maxZoom: 19
+        });
+
+        // Capa por defecto
+        darkLayer.addTo(map);
+        darkLayer.on('tileerror', function() {
+          document.getElementById('offline-banner').style.display = 'block';
+        });
+
+        L.control.layers({
+          "🌙 Carto Dark": darkLayer,
+          "🇪🇸 Ortofoto PNOA / IGN (España)": pnoaLayer,
+          "🛰️ Satélite ESRI": satelliteLayer,
+          "🗺️ OpenStreetMap": osmLayer
+        }, null, { position: 'topright' }).addTo(map);
+
+        var kmlCoords = __KML_COORDS_JSON__;
+        if (kmlCoords.length > 1) {
+          L.polyline(kmlCoords, { color: '#3b82f6', weight: 5, opacity: 0.85, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+        }
+
+        var kmlPoints = __KML_POINTS_JSON__;
+        var kmlIcon = L.divIcon({
+          html: '<div style="background:#3b82f6;width:10px;height:10px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 10px #3b82f6;"></div>',
+          className: '', iconSize: [14, 14]
+        });
+
+        kmlPoints.forEach(function(pt) {
+          L.marker([pt.lat, pt.lon], {icon: kmlIcon}).addTo(map)
+           .bindPopup('<div style="background:rgba(15,23,42,0.95);color:#fff;padding:8px 12px;border-radius:6px;"><b>📍 Hito:</b> ' + pt.name + '</div>');
+        });
+
+        var photos = __PHOTOS_JSON__;
+        var markers = L.markerClusterGroup({ maxClusterRadius: 40, spiderfyOnMaxZoom: true, showCoverageOnHover: false, zoomToBoundsOnClick: true });
+        var markerMap = {};
+
+        function renderIcon(color, heading) {
+          var arrow = '';
+          if (typeof heading === 'number' && !isNaN(heading)) {
+            arrow = '<div style="position:absolute;top:-8px;left:4px;width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:8px solid ' + color + ';transform:rotate(' + heading + 'deg);transform-origin:50% 12px;"></div>';
+          }
+          return L.divIcon({
+            html: '<div style="position:relative;background:' + color + ';width:16px;height:16px;border-radius:50%;border:3px solid rgba(255,255,255,0.9);box-shadow:0 0 12px ' + color + ';">' + arrow + '</div>',
+            className: '', iconSize: [22, 22]
+          });
+        }
+
+        var bounds = L.latLngBounds();
+
+        photos.forEach(function(photo) {
+          var heading = photo.gimbal_yaw !== null && photo.gimbal_yaw !== undefined ? photo.gimbal_yaw : photo.flight_yaw;
+          var iconColor = photo.is_inside ? '#10b981' : '#ef4444';
+          var iconToUse = renderIcon(iconColor, heading);
+          var marker = L.marker([photo.lat, photo.lon], {icon: iconToUse});
+          var distColor = photo.is_inside ? '#10b981' : '#ef4444';
+          var altBadge = photo.rel_altitude ? '<div class="metric-card"><span class="metric-label">Altitud Relativa</span><span class="metric-value">' + photo.rel_altitude.toFixed(1) + ' m</span></div>' : '';
+          var viewBadge = photo.view_label ? '<span style="display:inline-block;padding:2px 6px;border-radius:4px;background:#1e293b;font-size:11px;margin-left:6px;">' + photo.view_label + '</span>' : '';
+
+          var imgSrc = photo.img_url || photo.thumbnail || '';
+          var imgHtml = imgSrc ? '<div class="popup-image-container" onclick="openFullscreen(\'' + imgSrc + '\')"><img src="' + imgSrc + '" loading="lazy" alt="Preview"/></div>' : '';
+
+          var popupHTML = ''
+            + '<div class="popup-header"><h4>' + photo.name + viewBadge + '</h4></div>'
+            + imgHtml
+            + '<div class="popup-body">'
+            + '<div class="metric-card"><span class="metric-label">Hito Geográfico (P.K.)</span><span class="metric-value">' + photo.pk + '</span></div>'
+            + '<div class="metric-card"><span class="metric-label">Desviación (Distancia)</span><span class="metric-value" style="color: ' + distColor + ';">' + photo.distance.toFixed(2) + ' m</span></div>'
+            + altBadge
+            + '</div>';
+
+          marker.bindPopup(popupHTML);
+          markers.addLayer(marker);
+          markerMap[photo.name] = marker;
+          markerMap[photo.path] = marker;
+          bounds.extend([photo.lat, photo.lon]);
+        });
+
+        map.addLayer(markers);
+
+        if (photos.length > 0 || kmlCoords.length > 0) {
+          if (kmlCoords.length > 0) kmlCoords.forEach(function(c){ bounds.extend(c); });
+          map.fitBounds(bounds, {padding: [70, 70]});
+        }
+
+        window.focusPhotoByName = function(name) {
+          var marker = markerMap[name];
+          if (!marker) return;
+          markers.zoomToShowLayer(marker, function() {
+            map.setView(marker.getLatLng(), 18, { animate: true });
+            marker.openPopup();
+          });
+          document.getElementById('search-results').style.display = 'none';
+        };
+
+        window.focusPhoto = function(key) {
+          window.focusPhotoByName(key);
+        };
+
+        window.searchMap = function(query) {
+          query = (query || '').trim().toLowerCase();
+          var resBox = document.getElementById('search-results');
+          if (!query) { resBox.style.display = 'none'; return; }
+          var matches = photos.filter(function(p){
+            return (p.name && p.name.toLowerCase().includes(query)) || (p.pk && p.pk.toLowerCase().includes(query));
+          }).slice(0, 8);
+          if (matches.length === 0) {
+            resBox.innerHTML = '<div class="search-item" style="color:#94a3b8;">Sin coincidencias</div>';
+          } else {
+            resBox.innerHTML = matches.map(function(m){
+              return '<div class="search-item" onclick="focusPhotoByName(\'' + m.name + '\')"><b>' + m.name + '</b><br><small style="color:#94a3b8;">' + m.pk + ' (' + m.distance.toFixed(1) + ' m)</small></div>';
+            }).join('');
+          }
+          resBox.style.display = 'block';
+        };
+
+        window.openFullscreen = function(src) {
+          document.getElementById('fullscreen-img').src = src;
+          document.getElementById('fullscreen-overlay').classList.add('active');
+        };
+        window.closeFullscreen = function() {
+          document.getElementById('fullscreen-overlay').classList.remove('active');
+          setTimeout(function(){ document.getElementById('fullscreen-img').src = ''; }, 250);
+        };
+        document.addEventListener('keydown', function(event) {
+          if (event.key === "Escape") window.closeFullscreen();
+        });
+      })();
+    </script>
+</body>
+</html>

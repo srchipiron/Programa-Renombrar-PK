@@ -4,9 +4,29 @@ Centralized logging configuration for the application.
 import logging
 import logging.handlers
 import os
+import sys
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
+
+
+def _harden_console_encoding() -> None:
+    """Stop unencodable glyphs from blowing up console logging.
+
+    Coverage and rename warnings carry PK typography (``≥``, ``·``, ``→``).
+    When stderr is redirected to a pipe or file, Windows picks the ANSI code
+    page and ``logging`` raises ``UnicodeEncodeError``, replacing the message
+    with a "--- Logging error ---" dump. Switching the error handler keeps the
+    line (escaped) whatever the code page is; the file handlers stay UTF-8.
+    """
+    for stream in (sys.stderr, sys.stdout):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(errors="backslashreplace")
+        except (ValueError, OSError):  # pragma: no cover - exotic streams
+            continue
 
 class LoggingManager:
     """Manages application logging with rotation and structured output."""
@@ -18,6 +38,7 @@ class LoggingManager:
     
     def _setup_logging(self) -> None:
         """Configure logging with both file and console handlers."""
+        _harden_console_encoding()
         # Create logs directory
         self.log_dir.mkdir(exist_ok=True)
         

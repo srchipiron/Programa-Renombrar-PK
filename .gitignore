@@ -1,14 +1,18 @@
 __pycache__/
 **/__pycache__/
 *.py[cod]
-*.pyc
-*.pyo
-*.pyd
-*.pyc.*
 *$py.class
-*.log
 .pytest_cache/
+.venv/
+venv/
+.env
+
+# Local user settings (copy config.example.json on first run)
+config.json
+
 logs/
-/src/__pycache__/
-/src/core/__pycache__/
-/src/ui/__pycache__/
+
+# PyInstaller build artifacts
+build/
+dist/
+*.manifest

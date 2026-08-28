@@ -22,10 +22,11 @@ Aplicación de escritorio para renombrar fotografías aéreas basándose en su p
 
 ## 📋 Requisitos del Sistema
 
-- **Python 3.8+**
+- **Python 3.10+** (probado en 3.14)
 - **Windows 10/11** (recomendado)
 - **4GB+ RAM**
 - **Espacio en disco** para imágenes y copias de seguridad
+- **Qt WebEngine** (instalado como dependencia de PySide6, requiere OpenGL disponible)
 
 ## 🛠️ Instalación
 
@@ -50,17 +51,47 @@ pip install -r requirements.txt
 ```bash
 python main.py
 ```
+O simplemente haz doble clic en **`ejecutar.bat`** (o ejecuta `ejecutar.bat` en la terminal).
+
+## 📦 Generar Ejecutable (.exe)
+
+Se incluye una configuración de PyInstaller lista para empaquetar la aplicación
+como un ejecutable de Windows con todo el runtime de Qt WebEngine embebido.
+
+### 1. Instalar dependencias de build
+```bash
+pip install -r requirements-build.txt
+```
+
+### 2. Construir el bundle
+```bash
+build.bat
+```
+
+El resultado queda en `dist\RenombradorPKS\` (carpeta portable). Para lanzar la
+app basta con ejecutar `dist\RenombradorPKS\RenombradorPKS.exe` o distribuir
+toda la carpeta.
+
+> **Nota**: el bundle ocupa ~700 MB porque incluye el runtime completo de
+> `QtWebEngine` (Chromium embebido) necesario para el mapa interactivo. Si no
+> necesitas el mapa embebido, se podría generar una variante sin WebEngine
+> editando `RenombradorPKS.spec`.
+
+Para reconstruir desde cero, borra las carpetas `build\` y `dist\` antes de
+lanzar `build.bat` (el script ya lo hace automáticamente).
 
 ## 📦 Dependencias
 
-- **ttkbootstrap**: Interfaz moderna con temas
+- **PySide6**: Framework UI Qt6 (incluye `QtWebEngine` para el mapa embebido)
 - **shapely**: Operaciones geométricas
 - **fastkml**: Procesamiento KML/KMZ
 - **Pillow**: Manipulación de imágenes
 - **piexif**: Lectura de datos EXIF
 - **lxml**: Procesamiento XML
-- **tkintermapview**: Componentes de mapa
 - **pysrt**: Procesamiento de subtítulos
+
+La interfaz oficial es **PySide6/Qt** (`src/ui_qt/`). Copia `config.example.json`
+a `config.json` para tus rutas locales (ese archivo no se versiona).
 
 ## 🎯 Uso Rápido
 
@@ -126,29 +157,43 @@ Procesa subtítulos SRT de drones DJI/Autel:
 ### Estructura de Directorios
 ```
 src/
-├── core/                    # Lógica de negocio
-│   ├── config.py           # Gestión de configuración
-│   ├── events.py           # Sistema de eventos
-│   ├── logging_config.py   # Configuración de logging
-│   ├── services.py         # Servicios de negocio
-│   ├── models.py           # Modelos de datos
-│   ├── renamer_logic.py    # Lógica de renombrado
-│   ├── spatial_calculator.py # Cálculos espaciales
-│   └── video_extractor.py  # Extracción de video
-├── ui/                      # Interfaz de usuario
-│   ├── components/         # Componentes reutilizables
-│   │   ├── base.py         # Componentes base
-│   │   ├── sidebar.py      # Barra lateral
-│   │   └── tabs.py         # Panel de pestañas
-│   └── main_window_new.py  # Ventana principal
-└── map_component.py         # Gestor de mapas
+├── core/                      # Lógica de negocio (sin dependencias de UI)
+│   ├── config.py              # Configuración persistente (incluye tema)
+│   ├── coverage.py            # QA de cobertura: huecos, % de traza y PK sin foto
+│   ├── logging_config.py      # Configuración de logging
+│   ├── models.py              # Modelos de datos
+│   ├── renamer_logic.py       # Análisis, vista previa, renombrado y undo CSV
+│   ├── spatial_calculator.py  # Cálculos espaciales
+│   └── video_extractor.py     # Extracción de fotogramas virtuales (SRT)
+├── ui_qt/                     # Interfaz PySide6/Qt
+│   ├── app.py                 # Entry point (QApplication + tema + logging)
+│   ├── main_window.py         # QMainWindow con sidebar + tabs + status
+│   ├── sidebar.py             # Panel lateral con selectores y acciones
+│   ├── preview_tab.py         # Tabla ordenable/filtrable + miniatura
+│   ├── map_tab.py             # Mapa embebido con QWebEngineView
+│   ├── log_tab.py             # Pestaña de registro del logger real
+│   ├── help_tab.py            # Ayuda en QTextBrowser
+│   ├── workers.py             # Workers en hilo (análisis, rename, undo…)
+│   ├── undo_history.py        # Historial SQLite de renombrados
+│   ├── undo_dialog.py         # Diálogo para revertir operaciones pasadas
+│   ├── log_handler.py         # logging.Handler que emite señales Qt
+│   ├── session_store.py       # Autoguardado/restauración de sesión (sin Qt, testeable)
+│   ├── recents.py             # Helper puro para listas MRU (carpetas/KML recientes)
+│   └── theme.py               # QSS claro/oscuro con toggle
+└── map_component.py           # Generador HTML del mapa interactivo
 ```
 
+Copia `config.example.json` a `config.json` en el primer arranque (el archivo local no se versiona).
+
 ### Patrones de Diseño
-- **MVC**: Separación Modelo-Vista-Controlador
-- **Event-Driven**: Comunicación asíncrona entre componentes
-- **Service Layer**: Lógica de negocio encapsulada
-- **Dependency Injection**: Inyección de dependencias
+- **Separación core / UI**: `RenamerLogic` + `SpatialCalculator` sin PySide6
+- **Señales Qt + workers**: operaciones largas fuera del hilo de interfaz
+- **Historial de undo**: SQLite para lotes recientes; CSV (`reporte_renombrado.csv`) como respaldo
+- **Thread-safe UI**: workers en hilos aparte + entrega vía signals
+- **Índice espacial (STRtree)**: búsqueda del PK más cercano en O(log n) en vez de escanear todos los puntos por foto
+- **Lógica de `MainWindow` extraída**: sesión (`session_store.py`) y recientes (`recents.py`) son módulos puros y testeables sin Qt
+
+Ver `docs/adr/` para el detalle de cada decisión (incluye ADR-004 sobre el índice espacial y la extracción de sesión/recientes).
 
 ## 🔍 Solución de Problemas
 
@@ -184,6 +229,50 @@ python -m pytest tests/ --cov=src --cov-report=html
 ```
 
 ## 📝 Registro de Cambios
+
+### v3.3 - Análisis sin cuellos O(n²) y QA de cobertura contra la traza
+- ⚡ **Índice de sidecars por carpeta**: una sola lectura de directorio en vez de una por foto
+  (2000 fotos: 6,8 s → 0,015 s; análisis completo de 800 fotos 13,4× más rápido)
+- ⚡ **Partición landmark/PK cacheada**: la búsqueda del PK más cercano vuelve a ser O(log n)
+  aunque haya vertederos configurados (2,3× con 400 placemarks)
+- 🎯 **Cobertura relativa a la traza**: huecos de inicio y final, no solo entre fotos
+- 🎯 **Umbral de hueco adaptativo** (2,5 × espaciado mediano del vuelo): en una entrega real
+  pasa de 190 «huecos» ruidosos a 1 hueco verdadero de 404 m
+- 📐 **% de cobertura por huella** (±50 m por foto): 65 % real en vez de un 5 % sin sentido
+- 📋 **PK sin foto**: lista de placemarks del KML que no recibieron ninguna foto
+  (barra de estado, banner, log, CSV y GeoJSON)
+- 🐛 Sidecars revertidos ya no se registran como renombrados en el CSV de deshacer
+- 🐛 Los avisos con `≥ · →` ya no rompen el log de consola en páginas de códigos no UTF-8
+- 🧪 246 tests (antes 200), incluidos los primeros tests reales de `MainWindow`
+- 📄 ADR-006 y ADR-007
+
+### v3.2 - Cadena calibrada y cobertura de corredor
+- 🎯 **PK oficial interpolado** entre anclas del KML (slack chainage), no solo snap al placemark más cercano
+- 📏 **Umbral de corredor**: distancia perpendicular a la traza; landmarks siguen midiendo al placemark
+- 🧭 **Cobertura QA**: huecos de cadena ≥ 100 m en barra de estado, CSV y GeoJSON (`Ctrl+Shift+E`)
+- 📄 ADR-005 documenta la decisión frente a competidores de chainage / LRS
+
+### v3.1 - Optimización y endurecimiento (auditoría completa)
+- ⚡ **Índice espacial (STRtree)** para el PK más cercano: O(log n) en vez de escanear todos los puntos por foto
+- ⚡ **Detección de duplicados por rejilla**: de O(n × kept) a ~O(n) en lotes grandes
+- 🧩 **Extracción de `MainWindow`**: sesión (`session_store.py`) y recientes (`recents.py`) ahora son módulos puros sin Qt, con tests dedicados
+- 🛡️ **Logging consistente en `SpatialCalculator`**: los `except: pass` silenciosos ahora registran a nivel debug/warning/info para diagnosticar KML mal formados
+- 🐛 **Fix de concurrencia**: callback de fin de worker migrado de `QTimer.singleShot` (no fiable desde hilos sin *event loop*) a una señal Qt dedicada, eliminando el bloqueo "hay otra operación en curso"
+- 🐛 **Fix de crash en Windows**: inicialización perezosa de `QWebEngineView` + GPU deshabilitada en Chromium embebido
+- ✅ **+100 tests** (antes 83) cubriendo el índice espacial, duplicados en bordes de rejilla y los nuevos módulos puros
+- 📄 Ver `docs/adr/004-spatial-index-and-session-extraction.md` para el detalle
+
+### v3.0 - Remodelación de UI a PySide6/Qt
+- 🪟 Nueva UI basada en **PySide6/Qt6** con diseño responsive y docks
+- 🗺️ **Mapa embebido** con `QWebEngineView` reutilizando el generador HTML
+- 🧵 **Thread-safety**: operaciones largas en `QThread`-style workers con señales
+- 📜 **Pestaña de registro** alimentada por el logger real (`QtLogHandler`)
+- 📊 **Barra de progreso** con cancelación efectiva y contador de elementos
+- 🎨 **Temas claro/oscuro** con toggle persistente (`Ctrl+T`) en la config
+- 🔙 **Deshacer renombrado** con historial SQLite + respaldo CSV
+- ⌨️ Atajos equivalentes (F5–F8, Ctrl+O/K/E/T, Esc, F1) y menú completo
+- 🧪 Tests nuevos para workers y `QtLogHandler`
+- 🧹 Core unificado en `RenamerLogic` (sin capa `services`/`events` duplicada)
 
 ### v2.1 - Mejoras de UX y Rendimiento
 - 🚀 **Caché de Procesamiento**: Evita reprocesar archivos ya analizados
@@ -239,8 +328,56 @@ python -m pytest tests/ --cov=src --cov-report=html
 - **Ctrl+O** - Abrir carpeta
 - **Ctrl+K** - Abrir archivo KML
 - **Ctrl+E** - Exportar CSV
+- **Ctrl+T** - Alternar tema claro/oscuro
 - **F1** - Ver ayuda
-- **Alt+F4** - Salir
+- **Ctrl+Q** - Salir
+
+## 🤖 Agentes IA (agency-agents)
+
+Este proyecto integra [agency-agents](https://github.com/msitarzewski/agency-agents): un catálogo de especialistas IA para Cursor que ayudan a revisar código, UX, arquitectura y pruebas.
+
+### Sincronizar reglas en Cursor
+
+```bash
+scripts\sync_agency_agents.bat
+```
+
+Esto clona o actualiza el repositorio y convierte los agentes a reglas en `.cursor/rules/`. En el chat de Cursor, invoca un agente por nombre, por ejemplo:
+
+- `@code-reviewer` — revisión de código
+- `@ui-designer` — mejoras de interfaz
+- `@software-architect` — decisiones de arquitectura
+- `@agents-orchestrator` — flujo completo de mejora
+
+También puedes instalar la app de escritorio [Agency Agents](https://agencyagents.app) para gestionar agentes sin terminal.
+
+### Flujo guiado con @agents-orchestrator
+
+El orquestador coordina especialistas en fases. Archivos del pipeline:
+
+| Fase | Archivo | Agente |
+|------|---------|--------|
+| 1 — Plan | `project-specs/renombrador-pks-setup.md` | `@senior-project-manager` |
+| 2 — Tareas | `project-tasks/renombrador-pks-tasklist.md` | `@senior-project-manager` |
+| 3 — Arquitectura | `docs/adr/*.md` | `@software-architect` |
+| 4 — Implementar | cada tarea `[ ]` del tasklist | `@senior-developer` / `@code-reviewer` |
+| 5 — QA | `scripts\run_checks.bat` | `@test-results-analyzer` |
+| 6 — Cierre | revisión final | `@reality-checker` |
+
+**Comando para lanzar el pipeline en Cursor:**
+
+```
+@agents-orchestrator Ejecuta el pipeline completo para project-specs/renombrador-pks-setup.md:
+senior-project-manager → software-architect → [senior-developer ↔ test-results-analyzer por tarea]
+→ reality-checker. Marca cada tarea en project-tasks/renombrador-pks-tasklist.md al pasar QA.
+```
+
+**Por tarea individual:**
+
+```
+@agents-orchestrator Implementa la tarea T5 del tasklist con @senior-developer
+y valida con pytest antes de marcar [x].
+```
 
 ## 📄 Licencia
 
