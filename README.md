@@ -256,6 +256,21 @@ python -m pytest tests/ --cov=src --cov-report=html
 
 ## 📝 Registro de Cambios
 
+### v3.7 - Umbral automático por salto de distancias
+- 🎯 **El umbral se corta en el salto**, no en un percentil. Las entregas de corredor son
+  bimodales: fotos sobre la traza y unas pocas en otro sitio. Medido en dos trabajos
+  reales, el salto es inconfundible (10,8→44,6 m y 23,9→112 m) y entre los dos grupos
+  cualquier umbral da el mismo resultado
+- 🎯 **Deja de hacer falta ajustar `iqr_multiplier`**: con 1,5 y con 3,0 sale el mismo
+  umbral y el mismo conjunto de fotos. Con el valor por defecto anterior se perdían
+  1 y 4 fotos de corredor en esos mismos trabajos
+- 💬 **Explica el porqué**: el diálogo indica el salto detectado, cuántas fotos quedan
+  por debajo y que mover el umbral dentro del salto no cambia nada
+- 🔁 Las distribuciones continuas no cambian: sin salto dominante se usan los percentiles
+  de siempre
+- 🧪 360 tests
+- 📄 ADR-013
+
 ### v3.6 - Rendimiento del visor y de las miniaturas
 - 🗺️ **Hitos PK en canvas**: dejaban ~300 nodos DOM en el mapa a cualquier zoom, que
   Leaflet recolocaba en cada arrastre. Medido con el Leaflet real y volumen real
