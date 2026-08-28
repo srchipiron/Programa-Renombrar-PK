@@ -45,6 +45,26 @@ class TestUndoHistory(unittest.TestCase):
         self.assertTrue((self.folder / "original.jpg").exists())
         self.assertFalse(renamed.exists())
 
+    def test_apply_undo_reverts_a_batch_that_reused_a_name(self) -> None:
+        """The stored mapping is in rename order; undo must replay it backwards.
+
+        This also pins that ``UndoEntry.mapping`` keeps insertion order: if the
+        mapping were ever rebuilt unordered, chained batches would silently
+        stop reverting.
+        """
+        (self.folder / "B.jpg").write_bytes(b"soy-A")
+        (self.folder / "A.jpg").write_bytes(b"soy-C")
+        # process_images records {nuevo: original} in the order jobs ran.
+        self.history.record(str(self.folder), {"B.jpg": "A.jpg", "A.jpg": "C.jpg"})
+
+        entry = self.history.latest_for_folder(str(self.folder))
+        summary = apply_undo(entry)
+
+        self.assertEqual(summary["ok"], 2)
+        self.assertEqual(summary["conflict"], 0)
+        self.assertEqual((self.folder / "A.jpg").read_bytes(), b"soy-A")
+        self.assertEqual((self.folder / "C.jpg").read_bytes(), b"soy-C")
+
     def test_apply_undo_uses_relative_path_not_first_basename_match(self) -> None:
         """Same basename in two folders: only the mapped relative path is undone."""
         first = self.folder / "A_first"

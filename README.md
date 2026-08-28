@@ -84,7 +84,6 @@ lanzar `build.bat` (el script ya lo hace automáticamente).
 
 - **PySide6**: Framework UI Qt6 (incluye `QtWebEngine` para el mapa embebido)
 - **shapely**: Operaciones geométricas
-- **fastkml**: Procesamiento KML/KMZ
 - **Pillow**: Manipulación de imágenes
 - **piexif**: Lectura de datos EXIF
 - **lxml**: Procesamiento XML
@@ -229,6 +228,25 @@ python -m pytest tests/ --cov=src --cov-report=html
 ```
 
 ## 📝 Registro de Cambios
+
+### v3.4 - Undo fiable, parseo KML sin lastre y contrato de dependencias
+- 🐛 **Undo encadenado** (crítico): un lote que libera un nombre y lo reutiliza
+  (`A→B` y luego `C→A`) dejaba ficheros sin restaurar y los reportaba como «conflicto».
+  El undo se reproduce ahora en orden inverso (LIFO) en los dos canales, SQLite y CSV
+- ⚡ **Carga de KML 4,9× más rápida** (267 ms → 55 ms en una traza real de 500 KiB):
+  la rama `fastkml` fallaba en *todas* las cargas desde fastkml 1.x y consumía el 82 %
+  del tiempo antes de descartarse. `lxml` era ya el único parser que llegaba a ejecutarse
+- 📦 **Una dependencia menos** (`fastkml` + `pygeoif`): fuera de requirements, del bundle
+  PyInstaller y del instalador del operador
+- 🛡️ **Mínimos de versión reales**: el código exige `shapely>=2.0` (`STRtree.nearest`
+  devuelve índice desde 2.0; en 1.x devolvía la geometría) y `piexif>=1.1.3`
+- 🧪 **Tests de contrato de dependencias**: CI y los instaladores instalan sin lockfile,
+  así que las suposiciones sobre shapely/piexif/Pillow fallan con nombre y no como
+  `TypeError` a mitad de análisis
+- 🧪 **Dialectos KML fijados**: carpetas anidadas, `MultiGeometry`, prefijos de namespace,
+  KMZ, eje sintetizado desde placemarks, documento vacío y XML malformado
+- 🧪 266 tests (antes 246)
+- 📄 ADR-008
 
 ### v3.3 - Análisis sin cuellos O(n²) y QA de cobertura contra la traza
 - ⚡ **Índice de sidecars por carpeta**: una sola lectura de directorio en vez de una por foto

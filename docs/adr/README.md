@@ -9,5 +9,6 @@
 | [005](005-calibrated-chainage.md) | Calibrated linear referencing, corridor distance, coverage QA |
 | [006](006-analysis-hot-path-indexing.md) | One directory listing per folder, one point partition per KML |
 | [007](007-trace-relative-coverage.md) | Coverage against the trace, cadence-aware gap threshold |
+| [008](008-lxml-only-kml-and-dependency-contract.md) | lxml as the only KML parser, dependency assumptions under test |
 
 New decisions: add the next numbered file using the template in `.cursor/rules/software-architect.mdc`.

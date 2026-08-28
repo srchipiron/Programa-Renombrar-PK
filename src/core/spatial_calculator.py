@@ -7,7 +7,6 @@ from typing import Optional, List, Tuple, Dict, Any
 from lxml import etree
 from shapely.geometry import LineString, Point
 from shapely.strtree import STRtree
-from fastkml import kml
 from .models import KMLPoint
 
 logger = logging.getLogger(__name__)
@@ -221,28 +220,17 @@ class SpatialCalculator:
             self._calculate_pk_offset()
 
     def _extract_linestring(self, kml_content: bytes) -> None:
-        try:
-            k = kml.KML()
-            k.from_string(kml_content)
+        """Set ``project_axis`` from the first ``LineString`` in the document.
 
-            def find_linestring(features):
-                for feature in features:
-                    if hasattr(feature, 'geometry') and isinstance(getattr(feature, 'geometry'), LineString):
-                        return getattr(feature, 'geometry')
-                    if hasattr(feature, 'features'):
-                        res = find_linestring(list(feature.features()))
-                        if res:
-                            return res
-                return None
+        Parsing goes straight through ``lxml``: an XPath for
+        ``.//LineString/coordinates`` finds the trace wherever it sits
+        (folders, ``MultiGeometry``, any namespace, since
+        :meth:`_parse_kml_xml` strips them), and it is the same parser
+        :meth:`_extract_named_points` already runs on these bytes.
 
-            line = find_linestring(list(k.features()))
-            if line:
-                self.project_axis = line
-                return
-        except Exception as exc:
-            # fastkml can't parse every KML dialect; fall back to raw XML below.
-            logger.debug("fastkml no pudo extraer la traza, usando fallback XML: %s", exc)
-
+        When there is no trace but there are at least two PK placemarks, the
+        axis is synthesised by joining them in chainage order.
+        """
         try:
             root = self._parse_kml_xml(kml_content)
             if root is None:

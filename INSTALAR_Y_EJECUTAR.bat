@@ -150,7 +150,7 @@ echo  =====================================================================
 echo   PASO 3 de 3 - Instalando librerias del programa
 echo  =====================================================================
 echo.
-echo  Instalando: PySide6, Pillow, shapely, fastkml, piexif, pysrt...
+echo  Instalando: PySide6, Pillow, shapely, piexif, pysrt...
 echo  ^(Primera vez puede tardar 3-5 minutos segun la conexion^)
 echo.
 

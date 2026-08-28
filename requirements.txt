@@ -1,7 +1,10 @@
+# Los mínimos reflejan APIs que el código usa de verdad; el resto queda libre.
 PySide6>=6.7
-shapely
-fastkml
+# STRtree.nearest() devuelve un ÍNDICE desde 2.0 (en 1.x devolvía la geometría):
+# spatial_calculator hace int(...) sobre ese valor e indexa una lista.
+shapely>=2.0
 Pillow
-piexif
+# renamer_logic usa piexif.helper.UserComment y piexif.insert(..., new_file=...).
+piexif>=1.1.3
 lxml
 pysrt

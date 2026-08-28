@@ -2,7 +2,7 @@
 
 **Spec:** `project-specs/renombrador-pks-setup.md`  
 **QA gate:** `python -m pytest tests/ -q --tb=short` (QT_QPA_PLATFORM=offscreen)  
-**Última integración:** 246 tests + 19 subtests — PASS (fase 5 / T22–T27)
+**Última integración:** 266 tests + 19 subtests — PASS (fase 6 / T28–T30)
 
 ---
 
@@ -90,6 +90,28 @@
 - Perfilado de memoria en lotes de >5000 fotos
 - Modo opcional «snap a PK más cercano» para equipos que prefieran el comportamiento legacy de nombres
 - `pk_tolerance_m` configurable para corredores con hitos cada 250 m o 1 km
+
+---
+
+## Fase 6 — Fiabilidad del undo y saneado de dependencias
+
+### [x] T28 — Undo de lotes encadenados (bug confirmado)
+- Reproducido: `A→B` + `C→A` dejaba un fichero sin restaurar (`ok=1, conflict=1`)
+- `undo_rename_operations` reproduce en orden inverso; los buckets de basenames
+  duplicados se consumen también en inverso para conservar el emparejamiento legacy
+- Regresión en los dos canales: `test_rename_report.py` y `test_undo_history.py`
+- **Agente:** code-reviewer
+
+### [x] T29 — Eliminar la rama muerta de `fastkml`
+- Fallaba en todas las cargas desde fastkml 1.x y consumía el 82 % de `load_kml`
+- Dependencia fuera de requirements, `.spec`, instalador y README
+- `test_kml_dialects.py` fija lo que esa rama decía cubrir
+- **Agente:** performance-benchmarker + reality-checker
+
+### [x] T30 — Contrato de dependencias
+- `shapely>=2.0` y `piexif>=1.1.3` con la razón inline
+- `test_dependency_contract.py`: las suposiciones sobre terceros fallan con nombre
+- **Agente:** software-architect
 
 ---
 

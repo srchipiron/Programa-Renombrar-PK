@@ -111,6 +111,12 @@ def undo_rename_operations(
     - Nested ``nuevo`` + basename-only ``original``: restore to ``base/original``
       (root of the work folder), not next to the nested file.
 
+    ``operations`` arrive in rename order and are **replayed backwards**: a
+    batch may free a name and then reuse it (``A→B`` followed by ``C→A``), so
+    undoing forwards would try to restore ``B→A`` while ``A`` is still taken
+    and report a conflict for a batch that is perfectly reversible. Last in,
+    first out is the only order that inverts a sequence of moves.
+
     Returns ``{ok, missing, conflict}``.
     """
     base = Path(base_folder)
@@ -118,6 +124,10 @@ def undo_rename_operations(
     if not base.is_dir():
         return summary
 
+    # Duplicate basenames (same new name in two subfolders) carry no directory
+    # in legacy rows, so the Nth row is paired with the Nth walk occurrence.
+    # Rows are consumed backwards, so the buckets are consumed backwards too:
+    # that keeps the pairing identical while fixing chained renames.
     index: Dict[str, List[Path]] = {}
     for root, _dirs, files in os.walk(base):
         if "_backup_originales" in root:
@@ -125,7 +135,7 @@ def undo_rename_operations(
         for name in files:
             index.setdefault(name, []).append(Path(root) / name)
 
-    for new_key, old_key in operations:
+    for new_key, old_key in reversed(list(operations)):
         new_n = normalize_mapping_key(new_key)
         old_n = normalize_mapping_key(old_key)
         if not new_n or not old_n:
@@ -143,11 +153,11 @@ def undo_rename_operations(
                 # File moved after the report; fall back to basename search.
                 bucket = index.get(Path(new_n).name, [])
                 if bucket:
-                    src = bucket.pop(0)
+                    src = bucket.pop()
         else:
             bucket = index.get(new_n, [])
             if bucket:
-                src = bucket.pop(0)
+                src = bucket.pop()
 
         if src is None:
             summary["missing"] += 1

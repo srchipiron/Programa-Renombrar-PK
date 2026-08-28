@@ -6,7 +6,7 @@ cd /d "%~dp0.."
 set QT_QPA_PLATFORM=offscreen
 
 echo [1/2] Comprobando dependencias...
-python -c "import PySide6, shapely, fastkml, PIL, piexif" 2>nul
+python -c "import PySide6, shapely, PIL, piexif" 2>nul
 if errorlevel 1 (
     echo Instala dependencias: pip install -r requirements.txt pytest pytest-qt
     exit /b 1

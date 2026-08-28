@@ -50,6 +50,64 @@ class TestRenameReport(unittest.TestCase):
             self.assertEqual(load_rename_mapping(folder), {"same.jpg": "b.jpg"})
 
 
+class TestUndoOrdering(unittest.TestCase):
+    """A batch that frees a name and reuses it must undo completely.
+
+    ``process_images`` renames sequentially, so job N can legitimately take a
+    name that job N-1 just vacated (``A→B`` then ``C→A``). Replaying those
+    forwards tries to restore ``B→A`` while ``A`` is still occupied and gives
+    up with a conflict, leaving a file renamed even though the batch is fully
+    reversible.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.base = Path(self.tmp.name)
+
+    def test_reused_name_is_fully_reverted(self) -> None:
+        (self.base / "B.jpg").write_bytes(b"soy-A")
+        (self.base / "A.jpg").write_bytes(b"soy-C")
+        operations = [("B.jpg", "A.jpg"), ("A.jpg", "C.jpg")]  # orden de renombrado
+
+        summary = undo_rename_operations(self.base, operations)
+
+        self.assertEqual(summary, {"ok": 2, "missing": 0, "conflict": 0})
+        self.assertEqual((self.base / "A.jpg").read_bytes(), b"soy-A")
+        self.assertEqual((self.base / "C.jpg").read_bytes(), b"soy-C")
+        self.assertFalse((self.base / "B.jpg").exists())
+
+    def test_reused_name_across_subfolders(self) -> None:
+        (self.base / "VIADUCTOS").mkdir()
+        (self.base / "VIADUCTOS" / "PK-2+000.jpg").write_bytes(b"primera")
+        (self.base / "PK-1+000.jpg").write_bytes(b"segunda")
+        operations = [
+            ("VIADUCTOS/PK-2+000.jpg", "PK-1+000.jpg"),
+            ("PK-1+000.jpg", "DJI_0002.jpg"),
+        ]
+
+        summary = undo_rename_operations(self.base, operations)
+
+        self.assertEqual(summary["ok"], 2)
+        self.assertEqual(summary["conflict"], 0)
+        self.assertEqual((self.base / "PK-1+000.jpg").read_bytes(), b"primera")
+        self.assertEqual((self.base / "DJI_0002.jpg").read_bytes(), b"segunda")
+
+    def test_three_step_chain(self) -> None:
+        # A→B, C→A, D→C recorded in that order.
+        (self.base / "B.jpg").write_bytes(b"soy-A")
+        (self.base / "A.jpg").write_bytes(b"soy-C")
+        (self.base / "C.jpg").write_bytes(b"soy-D")
+        operations = [("B.jpg", "A.jpg"), ("A.jpg", "C.jpg"), ("C.jpg", "D.jpg")]
+
+        summary = undo_rename_operations(self.base, operations)
+
+        self.assertEqual(summary["ok"], 3)
+        self.assertEqual((self.base / "A.jpg").read_bytes(), b"soy-A")
+        self.assertEqual((self.base / "C.jpg").read_bytes(), b"soy-C")
+        self.assertEqual((self.base / "D.jpg").read_bytes(), b"soy-D")
+
+
 class TestRelativeUndo(unittest.TestCase):
     def test_nested_nuevo_restores_basename_original_to_base_root(self) -> None:
         """Cross-dir rename: original at root must not land next to nested nuevo."""

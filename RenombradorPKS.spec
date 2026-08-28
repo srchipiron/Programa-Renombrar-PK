@@ -27,8 +27,6 @@ APP_ICON_STR = str(APP_ICON) if APP_ICON.is_file() else None
 pyside_datas, pyside_binaries, pyside_hidden = collect_all("PySide6")
 shiboken_datas, shiboken_binaries, shiboken_hidden = collect_all("shiboken6")
 
-# fastkml / pygeoif sometimes have modules loaded lazily.
-fastkml_hidden = collect_submodules("fastkml") + collect_submodules("pygeoif")
 
 hiddenimports = [
     "src.ui_qt.app",
@@ -56,7 +54,6 @@ hiddenimports = [
     "src.map_component",
     *pyside_hidden,
     *shiboken_hidden,
-    *fastkml_hidden,
 ]
 
 binaries = [*pyside_binaries, *shiboken_binaries]

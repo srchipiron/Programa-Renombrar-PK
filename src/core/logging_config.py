@@ -94,7 +94,6 @@ class LoggingManager:
         # Suppress noisy third-party loggers
         logging.getLogger('PIL').setLevel(logging.WARNING)
         logging.getLogger('shapely').setLevel(logging.WARNING)
-        logging.getLogger('fastkml').setLevel(logging.WARNING)
     
     @staticmethod
     def get_logger(name: str) -> logging.Logger:
