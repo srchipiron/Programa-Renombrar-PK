@@ -98,6 +98,8 @@ class PreviewTableModel(QAbstractTableModel):
             if key == "new_name":
                 if item.excluded:
                     return "(excluida)"
+                if item.virtual:
+                    return "(fotograma de vídeo — no se renombra)"
                 return self._preview.get(item.path, "") or "(fuera de umbral)"
             if key == "dest":
                 if item.excluded or not item.is_inside_threshold:

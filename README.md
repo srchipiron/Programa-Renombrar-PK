@@ -230,6 +230,10 @@ python -m pytest tests/ --cov=src --cov-report=html
 ## 📝 Registro de Cambios
 
 ### v3.4 - Undo fiable, parseo KML sin lastre y contrato de dependencias
+- 🐛 **Fotogramas de vídeo (SRT) fuera del renombrado**: todos compartían la ruta del
+  propio `.SRT`, así que la vista previa colapsaba N filas en una y F7 intentaba renombrar
+  el fichero de telemetría (4 cues → `{ok: 0, errors: 4}`). Ahora son evidencia de
+  cobertura, no objetivos de renombrado (ADR-009)
 - 🐛 **Undo encadenado** (crítico): un lote que libera un nombre y lo reutiliza
   (`A→B` y luego `C→A`) dejaba ficheros sin restaurar y los reportaba como «conflicto».
   El undo se reproduce ahora en orden inverso (LIFO) en los dos canales, SQLite y CSV
@@ -245,8 +249,8 @@ python -m pytest tests/ --cov=src --cov-report=html
   `TypeError` a mitad de análisis
 - 🧪 **Dialectos KML fijados**: carpetas anidadas, `MultiGeometry`, prefijos de namespace,
   KMZ, eje sintetizado desde placemarks, documento vacío y XML malformado
-- 🧪 266 tests (antes 246)
-- 📄 ADR-008
+- 🧪 273 tests (antes 246)
+- 📄 ADR-008 y ADR-009
 
 ### v3.3 - Análisis sin cuellos O(n²) y QA de cobertura contra la traza
 - ⚡ **Índice de sidecars por carpeta**: una sola lectura de directorio en vez de una por foto

@@ -987,6 +987,12 @@ class RenamerLogic:
             if not img.is_inside_threshold or img.excluded:
                 img.new_name_base = ""
                 continue
+            if img.virtual:
+                # Telemetry frames still count for coverage, but there is no
+                # file to rename: planning one would target the .srt itself.
+                img.new_name_base = ""
+                img.pk_display = f"PK-{self.spatial_calc.format_pk_label(img.pk_value)}"
+                continue
 
             use_interpolated = (
                 self.spatial_calc.project_axis is not None
@@ -1590,7 +1596,10 @@ class RenamerLogic:
         for item in items:
             if not item.is_inside_threshold or item.excluded:
                 continue
-            if not item.new_name_base:
+            # Belt and braces: ``build_preview_names`` already leaves virtual
+            # frames without a base name, but F7 must never touch a path that
+            # does not name a real file.
+            if item.virtual or not item.new_name_base:
                 continue
             pk_groups.setdefault(item.new_name_base, []).append(item)
 

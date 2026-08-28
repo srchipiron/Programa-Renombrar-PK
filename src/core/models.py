@@ -48,6 +48,12 @@ class PhotoItem:
     #: Companion files (RAW/DNG/XMP/...) found alongside the photo.
     sidecars: List[str] = field(default_factory=list)
 
+    #: True for telemetry-derived frames (SRT video import): they carry a
+    #: position and count as coverage evidence, but no file exists on disk,
+    #: so they must never reach the rename plan. ``path`` is a synthetic
+    #: ``<srt>#NNNNNN`` marker kept unique so preview rows stay distinct.
+    virtual: bool = False
+
     # --- EXIF extras ----------------------------------------------------
     camera: str = ""
     gimbal_yaw: Optional[float] = None

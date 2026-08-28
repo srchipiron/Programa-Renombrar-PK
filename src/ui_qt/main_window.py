@@ -232,7 +232,9 @@ class MainWindow(QMainWindow):
             return
         if self._analysis_items:
             inside = sum(
-                1 for it in self._analysis_items if it.is_inside_threshold and not it.excluded
+                1
+                for it in self._analysis_items
+                if it.is_inside_threshold and not it.excluded and not it.virtual
             )
             thr = self.sidebar.get_config().threshold
             coverage_line, coverage_warns = self._coverage_hint()
@@ -396,7 +398,11 @@ class MainWindow(QMainWindow):
         plan = self.renamer.build_preview_plan(items, cfg.folder or "")
         self.preview_tab.set_items(items)
         self.preview_tab.update_preview(items, plan=plan)
-        inside = sum(1 for it in items if it.is_inside_threshold and not it.excluded)
+        inside = sum(
+            1
+            for it in items
+            if it.is_inside_threshold and not it.excluded and not it.virtual
+        )
         excluded = sum(1 for it in items if it.excluded)
         distances = [it.distance for it in items if it.distance != float("inf")]
         self.sidebar.set_histogram(distances, cfg.threshold)
@@ -962,7 +968,8 @@ class MainWindow(QMainWindow):
         self._analysis_items.sort(key=photo_work_type_sort_key)
         self._on_refresh_preview()
         self.status_message.setText(
-            f"Importados {len(items)} puntos desde SRT. Total: {len(self._analysis_items)}."
+            f"Importados {len(items)} puntos desde SRT (solo análisis y cobertura; "
+            f"no se renombran). Total: {len(self._analysis_items)}."
         )
 
     # ------------------------------------------------------------------

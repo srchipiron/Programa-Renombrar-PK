@@ -51,7 +51,7 @@ class SessionStore:
             logger.exception("Failed to autosave session to %s", self.path)
 
     def load(self) -> Dict[str, Any]:
-        """Return the last saved session, filtered to files that still exist.
+        """Return the last saved session, filtered to items still usable.
 
         The returned dict has keys ``folder``, ``kml``, ``items``
         (``List[PhotoItem]``), ``restored_count`` and ``total_count``. An
@@ -80,7 +80,10 @@ class SessionStore:
                 # Older session file with fields since removed/renamed.
                 restored.append(PhotoItem(**{k: v for k, v in raw.items() if k in _PHOTO_ITEM_FIELDS}))
 
-        existing = [it for it in restored if os.path.exists(it.path)]
+        # Telemetry frames (SRT import) carry their position in the session
+        # itself and have no file on disk, so the existence check would drop
+        # every one of them — and the whole session when it holds only frames.
+        existing = [it for it in restored if it.virtual or os.path.exists(it.path)]
         if not existing:
             return {}
 

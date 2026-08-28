@@ -2,7 +2,7 @@
 
 **Spec:** `project-specs/renombrador-pks-setup.md`  
 **QA gate:** `python -m pytest tests/ -q --tb=short` (QT_QPA_PLATFORM=offscreen)  
-**Última integración:** 266 tests + 19 subtests — PASS (fase 6 / T28–T30)
+**Última integración:** 273 tests + 19 subtests — PASS (fase 6 / T28–T31)
 
 ---
 
@@ -112,6 +112,13 @@
 - `shapely>=2.0` y `piexif>=1.1.3` con la razón inline
 - `test_dependency_contract.py`: las suposiciones sobre terceros fallan con nombre
 - **Agente:** software-architect
+
+### [x] T31 — Fotogramas SRT como evidencia, no como objetivo de renombrado
+- Reproducido: 4 cues → vista previa con 1 entrada de plan y `{ok: 0, errors: 4}` en F7,
+  renombrando el propio `.SRT`
+- `PhotoItem.virtual` + ruta sintética única; excluidos del plan, contados en cobertura
+- `SessionStore` deja de descartarlos por no existir en disco (regresión detectada por test)
+- **Agente:** senior-developer + reality-checker
 
 ---
 

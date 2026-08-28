@@ -132,15 +132,22 @@ class VideoExtractor:
                 except Exception:
                     time_str = ""
 
-            frame_label = time_str if time_str else f"{len(self.srt_items):06d}"
+            index = len(self.srt_items)
+            frame_label = time_str if time_str else f"{index:06d}"
             item = PhotoItem(
-                name=f"Frame_{frame_label}.jpg",
-                path=srt_path,
+                # Cues share a wall clock second (DJI writes ~30/s), so the
+                # index disambiguates both the label and the identity key.
+                name=f"Frame_{frame_label}_{index:06d}.jpg",
+                # No file exists per frame. A unique synthetic path keeps the
+                # preview plan and the table keyed per row instead of
+                # collapsing every frame onto the .srt file itself.
+                path=f"{srt_path}#{index:06d}",
                 lat=lat,
                 lon=lon,
                 date_str=date_str,
                 time_str=time_str,
                 rel_altitude=alt,
+                virtual=True,
             )
             self.srt_items.append(item)
 
