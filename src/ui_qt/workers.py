@@ -61,6 +61,7 @@ class AnalysisWorker(_BaseWorker):
         max_workers: int = 4,
         tukey_multiplier: float = 1.5,
         extra_landmarks: Optional[List[Dict[str, Any]]] = None,
+        landmark_kmls: Optional[List[str]] = None,
         landmark_groups: Optional[List[Dict[str, Any]]] = None,
         landmark_capture_radius: float = 300.0,
         landmark_cluster_radius: float = 500.0,
@@ -76,6 +77,7 @@ class AnalysisWorker(_BaseWorker):
         self.max_workers = max_workers
         self.tukey_multiplier = tukey_multiplier
         self.extra_landmarks = list(extra_landmarks or [])
+        self.landmark_kmls = list(landmark_kmls or [])
         self.landmark_groups = list(landmark_groups or [])
         self.landmark_capture_radius = landmark_capture_radius
         self.landmark_cluster_radius = landmark_cluster_radius
@@ -96,6 +98,11 @@ class AnalysisWorker(_BaseWorker):
                 spatial_calc.load_kml(self.kml_path)
             if self.extra_landmarks:
                 spatial_calc.add_landmarks_from_dicts(self.extra_landmarks)
+            for kml_path in self.landmark_kmls:
+                try:
+                    spatial_calc.add_landmarks_from_kml(kml_path)
+                except Exception:
+                    logger.warning("No se pudieron cargar landmarks de %s", kml_path)
             if self.landmark_groups:
                 spatial_calc.set_landmark_groups(self.landmark_groups)
             if self.landmark_capture_radius > 0:

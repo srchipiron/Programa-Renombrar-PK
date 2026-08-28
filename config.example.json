@@ -14,6 +14,7 @@
     "notify_on_finish": true,
     "auto_refresh_preview": true,
     "extra_landmarks": [],
+    "landmark_kmls": [],
     "landmark_capture_radius": 450.0,
     "landmark_threshold": 450.0,
     "landmark_cluster_radius": 500.0,

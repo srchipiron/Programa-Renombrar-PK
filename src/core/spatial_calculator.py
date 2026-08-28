@@ -1,4 +1,5 @@
 import math
+import os
 import zipfile
 import re
 import json
@@ -259,12 +260,21 @@ class SpatialCalculator:
         )
 
     def _extract_named_points(self, kml_content: bytes) -> None:
-        self.named_points = []
+        self.named_points = self._parse_named_points(kml_content)
+
+    def _parse_named_points(self, kml_content: bytes) -> List[KMLPoint]:
+        """Return the named ``Point`` placemarks of a KML, without side effects.
+
+        Kept separate from :meth:`_extract_named_points` so a *second* file
+        (a landmarks KML such as ``Vertederos.kml``) can be parsed without
+        touching the loaded trace.
+        """
+        found: List[KMLPoint] = []
         try:
             root = self._parse_kml_xml(kml_content)
             if root is None:
                 logger.warning("No se pudo parsear el KML para extraer puntos nombrados")
-                return
+                return found
 
             for placemark in root.findall('.//Placemark'):
                 name_elem = placemark.find('name')
@@ -275,7 +285,7 @@ class SpatialCalculator:
                     try:
                         parts = coords_text.split(',')
                         lon, lat = float(parts[0]), float(parts[1])
-                        self.named_points.append(KMLPoint(name=name, lat=lat, lon=lon))
+                        found.append(KMLPoint(name=name, lat=lat, lon=lon))
                     except (ValueError, IndexError) as exc:
                         logger.debug(
                             "Placemark '%s' con coordenadas inválidas (%r): %s",
@@ -283,6 +293,84 @@ class SpatialCalculator:
                         )
         except Exception as e:
             logger.warning("Error extrayendo puntos nombrados: %s", e)
+        return found
+
+    def _read_kml_bytes(self, path: str) -> Optional[bytes]:
+        """Return the KML payload of a ``.kml`` or ``.kmz`` file."""
+        try:
+            if path.lower().endswith('.kmz'):
+                with zipfile.ZipFile(path, 'r') as kmz:
+                    for filename in kmz.namelist():
+                        if filename.lower().endswith('.kml'):
+                            with kmz.open(filename) as fh:
+                                return fh.read()
+                return None
+            with open(path, 'rb') as fh:
+                return fh.read()
+        except (OSError, zipfile.BadZipFile) as exc:
+            logger.warning("No se pudo leer el KML de landmarks %s: %s", path, exc)
+            return None
+
+    def add_landmarks_from_kml(self, path: str) -> int:
+        """Merge the landmarks of a *second* file into the loaded trace.
+
+        A project keeps its landfills in their own file (``Vertederos.kml``)
+        because the client edits them between deliveries. :meth:`load_kml`
+        resets every field, so pointing it at that file would discard the
+        trace — this reads it and merges only what a landmarks file contains
+        by construction: placemarks whose name is **not** a chainage post.
+        That guard means aiming this at a trace KML by mistake adds nothing
+        instead of turning 300 PK posts into landfills.
+
+        Returns the number of landmarks added.
+        """
+        if not path or not os.path.isfile(path):
+            logger.warning("Fichero de landmarks no encontrado: %s", path)
+            return 0
+
+        if path.lower().endswith(('.geojson', '.json')):
+            points = self._read_geojson_points(path)
+        else:
+            content = self._read_kml_bytes(path)
+            points = self._parse_named_points(content) if content else []
+
+        landmarks = [
+            pt for pt in points
+            if pt.name and self._parse_pk_from_name(pt.name) is None
+        ]
+        skipped = len(points) - len(landmarks)
+        if skipped:
+            logger.info(
+                "%s: %d punto(s) con nombre de PK ignorados (no son landmarks)",
+                os.path.basename(path), skipped,
+            )
+        added = self.add_named_points(landmarks, mark_as_landmark=True)
+        logger.info(
+            "Landmarks desde %s: %d añadidos de %d",
+            os.path.basename(path), added, len(landmarks),
+        )
+        return added
+
+    def _read_geojson_points(self, path: str) -> List[KMLPoint]:
+        """Named ``Point`` features of a GeoJSON, without touching state."""
+        out: List[KMLPoint] = []
+        try:
+            with open(path, 'r', encoding='utf-8') as fh:
+                data = json.load(fh)
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("No se pudo leer el GeoJSON de landmarks %s: %s", path, exc)
+            return out
+        features = data.get('features', []) if data.get('type') == 'FeatureCollection' else [data]
+        for feature in features:
+            geom = feature.get('geometry') if isinstance(feature, dict) else None
+            if not geom or geom.get('type') != 'Point':
+                continue
+            coords = geom.get('coordinates') or []
+            props = feature.get('properties') or {}
+            name = str(props.get('name', props.get('Name', ''))).strip()
+            if name and len(coords) >= 2:
+                out.append(KMLPoint(name=name, lon=float(coords[0]), lat=float(coords[1])))
+        return out
 
     @staticmethod
     def _parse_kml_xml(kml_content: bytes):
@@ -447,7 +535,9 @@ class SpatialCalculator:
             if not label or not folder or not isinstance(members, list):
                 continue
             clean_members = [str(m).strip() for m in members if str(m).strip()]
-            if len(clean_members) < 2:
+            # Un solo miembro es un alias legitimo: el cliente puede pedir que
+            # el vertedero "TP01" del KML se entregue en la carpeta "TP-01".
+            if not clean_members:
                 continue
             self._landmark_groups.append(
                 {"name": label, "folder": folder, "members": clean_members}

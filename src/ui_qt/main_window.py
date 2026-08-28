@@ -352,6 +352,14 @@ class MainWindow(QMainWindow):
         landmarks = self.config_manager.config.extra_landmarks
         if landmarks:
             self.spatial_calc.add_landmarks_from_dicts(landmarks)
+        # Ficheros de landmarks del proyecto (Vertederos.kml y similares): el
+        # cliente los edita entre entregas, asi que se leen en vez de copiar
+        # coordenadas a mano en config.json.
+        for kml_path in self.config_manager.config.landmark_kmls:
+            try:
+                self.spatial_calc.add_landmarks_from_kml(kml_path)
+            except Exception:
+                logger.warning("No se pudieron cargar landmarks de %s", kml_path)
         groups = self.config_manager.config.landmark_groups
         if groups:
             self.spatial_calc.set_landmark_groups(groups)
@@ -490,6 +498,7 @@ class MainWindow(QMainWindow):
             max_workers=self.renamer.max_workers,
             tukey_multiplier=self.config_manager.config.iqr_multiplier,
             extra_landmarks=self.config_manager.config.extra_landmarks,
+            landmark_kmls=self.config_manager.config.landmark_kmls,
             landmark_groups=self.config_manager.config.landmark_groups,
             landmark_capture_radius=self.config_manager.config.landmark_capture_radius,
             landmark_cluster_radius=self.config_manager.config.landmark_cluster_radius,

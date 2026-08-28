@@ -34,6 +34,11 @@ class AppConfig:
     # Named points merged into every loaded KML/GeoJSON (e.g. vertederos).
     # Each entry: {"name": str, "lat": float, "lon": float}
     extra_landmarks: List[Dict[str, Any]] = field(default_factory=list)
+    # Extra KML/KMZ/GeoJSON files holding this project's landmarks
+    # (e.g. "Vertederos.kml"). The client edits them between deliveries, so
+    # reading them beats copying coordinates into this file by hand. Only
+    # placemarks whose name is not a chainage post are merged.
+    landmark_kmls: List[str] = field(default_factory=list)
     # Wider capture/threshold for landmarks (aerial photos are often 150-250 m away).
     landmark_capture_radius: float = 450.0
     landmark_threshold: float = 450.0
@@ -73,6 +78,9 @@ class AppConfig:
         del self.recent_kmls[self.MAX_RECENTS:]
         self.extra_landmarks = _normalize_landmarks(self.extra_landmarks)
         self.landmark_groups = _normalize_landmark_groups(self.landmark_groups)
+        if not isinstance(self.landmark_kmls, list):
+            self.landmark_kmls = []
+        self.landmark_kmls = [str(p).strip() for p in self.landmark_kmls if str(p).strip()]
         if not isinstance(self.viaduct_pks, list):
             self.viaduct_pks = []
         self.viaduct_pks = [
