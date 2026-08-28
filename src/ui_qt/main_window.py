@@ -30,6 +30,7 @@ from ..core.rename_report import report_csv_path
 from ..core.renamer_logic import RenamerLogic, photo_work_type_sort_key
 from ..core.spatial_calculator import SpatialCalculator
 from .help_tab import HelpTab
+from .eliding_label import ElidingLabel
 from .log_handler import QtLogHandler
 from .log_tab import LogTab
 from .map_tab import MapTab
@@ -145,7 +146,9 @@ class MainWindow(QMainWindow):
         bar = QStatusBar()
         self.setStatusBar(bar)
 
-        self.status_message = QLabel("Listo.")
+        # Eliding: the coverage summary runs to ~300 characters and a plain
+        # QLabel would make that the window's minimum width.
+        self.status_message = ElidingLabel("Listo.")
         bar.addWidget(self.status_message, 1)
 
         self.progress_bar = QProgressBar()

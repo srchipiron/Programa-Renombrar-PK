@@ -2,7 +2,7 @@
 
 **Spec:** `project-specs/renombrador-pks-setup.md`  
 **QA gate:** `python -m pytest tests/ -q --tb=short` (QT_QPA_PLATFORM=offscreen)  
-**Última integración:** 277 tests + 19 subtests — PASS (fase 6 / T28–T33)
+**Última integración:** 282 tests + 20 subtests — PASS (fase 6 / T28–T34)
 
 ---
 
@@ -132,6 +132,13 @@
 - Payload escapado + `esc()` en la plantilla + lista de búsqueda construida con DOM
 - Verificado en navegador real: título intacto, cero `img[onerror]`
 - **Agente:** security-auditor
+
+### [x] T34 — La barra de estado ya no dimensiona la ventana
+- Detectado ejecutando la app real: tras analizar 238 fotos la ventana pasaba de
+  1400 a 1932 px de ancho y su mínimo quedaba en 1932 (no se podía encoger)
+- Causa: `QLabel` de estado sin elidir pidiendo 3576 px al layout
+- `ElidingLabel` (política horizontal `Ignored` + tooltip con el texto completo)
+- **Agente:** ui-designer
 
 ---
 
