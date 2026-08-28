@@ -229,6 +229,19 @@ python -m pytest tests/ --cov=src --cov-report=html
 
 ## 📝 Registro de Cambios
 
+### v3.5 - Selector de obra
+- 🏗️ **Cada obra con su lógica**: traza, vertederos, viaductos, umbral y sufijo dejan de
+  ser globales. Un JSON por obra en `proyectos/` y un desplegable en el panel
+- 🔎 **La carpeta elige la obra**: el árbol de entrega ya dice de qué corredor es
+  (`…/CLIENTES/<obra>/<año>/<mes>/`), así que al elegir carpeta se cargan sus ajustes
+- 🛡️ **Aviso de carpeta ajena** antes de analizar: aplicar los vertederos y viaductos de
+  otra obra no daba error (están a 200 km y con otra cadena), pero creaba las carpetas
+  de ese cliente dentro de la entrega de otro
+- 🔄 **Migración automática**: en el primer arranque tu configuración actual se guarda
+  como obra y queda activa, sin perder nada
+- 💾 **«Guardar ajustes como obra…»** para dar de alta las demás sin editar JSON
+- 📄 ADR-011
+
 ### v3.4 - Undo fiable, parseo KML sin lastre y contrato de dependencias
 - 📍 **Vertederos en su propio fichero**: `landmark_kmls` permite leer `Vertederos.kml`
   **además** de la traza (antes `load_kml` reseteaba el estado y era imposible). Solo se
@@ -273,7 +286,7 @@ python -m pytest tests/ --cov=src --cov-report=html
   `TypeError` a mitad de análisis
 - 🧪 **Dialectos KML fijados**: carpetas anidadas, `MultiGeometry`, prefijos de namespace,
   KMZ, eje sintetizado desde placemarks, documento vacío y XML malformado
-- 🧪 295 tests (antes 246)
+- 🧪 326 tests (antes 246)
 - 📄 ADR-008, ADR-009 y ADR-010
 
 ### v3.3 - Análisis sin cuellos O(n²) y QA de cobertura contra la traza

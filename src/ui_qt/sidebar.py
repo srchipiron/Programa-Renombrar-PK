@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QIntValidator
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDoubleSpinBox,
     QFileDialog,
     QFrame,
@@ -132,6 +133,8 @@ class Sidebar(QWidget):
     generate_map_requested = Signal()
     auto_threshold_requested = Signal()
     open_folder_requested = Signal()
+    project_changed = Signal(str)
+    save_project_requested = Signal()
 
     def __init__(self, config_manager: ConfigManager, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -162,6 +165,27 @@ class Sidebar(QWidget):
         self.workflow_banner.setWordWrap(True)
         self.workflow_banner.setProperty("level", "info")
         layout.addWidget(self.workflow_banner)
+
+        # La obra decide traza, vertederos, viaductos, umbral y sufijo,
+        # asi que va antes que los archivos.
+        layout.addWidget(_section_title("OBRA"))
+        self.project_combo = QComboBox()
+        self.project_combo.setToolTip(
+            "Obra activa. Cada una trae su traza, vertederos, viaductos, "
+            "umbral y sufijo."
+        )
+        self.project_combo.currentIndexChanged.connect(self._on_project_index_changed)
+        layout.addWidget(self.project_combo)
+
+        self.save_project_btn = QPushButton("Guardar ajustes como obra…")
+        self.save_project_btn.setToolTip(
+            "Guarda traza, vertederos, viaductos, umbral y sufijo actuales "
+            "como una obra reutilizable."
+        )
+        self.save_project_btn.clicked.connect(self.save_project_requested)
+        layout.addWidget(self.save_project_btn)
+
+        layout.addWidget(_hline())
 
         # Files section
         layout.addWidget(_section_title("ARCHIVOS"))
@@ -298,6 +322,36 @@ class Sidebar(QWidget):
     # ------------------------------------------------------------------
     # Public helpers
     # ------------------------------------------------------------------
+    def set_projects(self, names: list, active: str = "") -> None:
+        """Fill the corridor selector without emitting a change."""
+        self.project_combo.blockSignals(True)
+        try:
+            self.project_combo.clear()
+            self.project_combo.addItem("(sin obra)", "")
+            for name in names:
+                self.project_combo.addItem(name, name)
+            index = self.project_combo.findData(active or "")
+            self.project_combo.setCurrentIndex(max(0, index))
+        finally:
+            self.project_combo.blockSignals(False)
+
+    def current_project(self) -> str:
+        return str(self.project_combo.currentData() or "")
+
+    def select_project(self, name: str) -> None:
+        """Show ``name`` as active without re-triggering the change signal."""
+        index = self.project_combo.findData(name or "")
+        if index < 0:
+            return
+        self.project_combo.blockSignals(True)
+        try:
+            self.project_combo.setCurrentIndex(index)
+        finally:
+            self.project_combo.blockSignals(False)
+
+    def _on_project_index_changed(self, _index: int) -> None:
+        self.project_changed.emit(self.current_project())
+
     def set_workflow_hint(self, html: str, *, level: str = "info") -> None:
         """Update the guided workflow banner (info | success | warning)."""
         self.workflow_banner.setProperty("level", level)

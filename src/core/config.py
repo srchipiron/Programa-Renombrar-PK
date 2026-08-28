@@ -19,6 +19,10 @@ class AppConfig:
     """Application configuration with validation."""
     last_folder: str = ""
     last_kml: str = ""
+    # Corridor whose rules are loaded. Definitions live in ``projects_dir``,
+    # one JSON per corridor; the fields below mirror the active one.
+    active_project: str = ""
+    projects_dir: str = "proyectos"
     last_suffix: str = "[PK]-DEFAULT"
     threshold: float = 30.0  # aligned with AUTO_THRESHOLD_DEFAULT in renamer_logic
     create_backup: bool = True

@@ -2,7 +2,7 @@
 
 **Spec:** `project-specs/renombrador-pks-setup.md`  
 **QA gate:** `python -m pytest tests/ -q --tb=short` (QT_QPA_PLATFORM=offscreen)  
-**Última integración:** 285 tests + 20 subtests — PASS (fase 6 / T28–T35)
+**Última integración:** 326 tests + 20 subtests — PASS (fase 7 / T36)
 
 ---
 
@@ -205,3 +205,21 @@
   `test_main_window_coverage_ui.py` (primer test real de `MainWindow`),
   `test_logging_console_encoding.py` — 246 tests PASS
 - **Agente:** code-reviewer
+
+---
+
+## Fase 7 — Selector de obra
+
+### [x] T36 — Un proyecto por corredor (ADR-011)
+- `core/projects.py` (sin Qt): `Project`, `ProjectStore`, detección de raíz por ruta
+  y migración desde la config global
+- Selector en el panel + «Guardar ajustes como obra…»; la carpeta elige la obra
+- Aviso antes de F5 si la carpeta no es de la obra activa (el fallo silencioso que
+  creaba `VERTEDEROS/Caliche-Palomares` en la entrega de otro cliente)
+- Verificado con la config real: nombre, ámbito, traza, umbral, sufijo, 5 vertederos,
+  el grupo Caliche-Palomares y los 29 viaductos migran intactos
+- **Agente:** software-architect + ui-designer
+
+### Pendiente de decidir
+- Los ficheros de obra son locales: si aparece un segundo operador, valorar moverlos
+  al servidor (implicaría escribir en carpetas de cliente y depender de la red)

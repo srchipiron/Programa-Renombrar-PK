@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import logging
 import os
+from pathlib import Path
 from typing import List, Optional
 
 from PySide6.QtCore import Qt, QTimer, Slot, QUrl
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDockWidget,
     QFileDialog,
+    QInputDialog,
     QLabel,
     QMainWindow,
     QMessageBox,
@@ -26,6 +28,12 @@ from ..core.config import ConfigManager
 from ..core.coverage import CoverageReport, compute_coverage
 from ..core.geojson_export import export_analysis_geojson
 from ..core.models import PhotoItem
+from ..core.projects import (
+    Project,
+    ProjectStore,
+    bootstrap_from_config,
+    project_from_config,
+)
 from ..core.rename_report import report_csv_path
 from ..core.renamer_logic import RenamerLogic, photo_work_type_sort_key
 from ..core.spatial_calculator import SpatialCalculator
@@ -64,6 +72,19 @@ _METHOD_LABELS = {
 }
 
 
+def _resolve_projects_dir(configured: str) -> Path:
+    """Absolute path of the corridor definitions directory.
+
+    Relative values resolve against the project root (next to ``main.py``), the
+    same rule the session store and the undo history follow, so the list does
+    not depend on the working directory the app was launched from.
+    """
+    path = Path(configured or "proyectos")
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parents[2] / path
+    return path
+
+
 class MainWindow(QMainWindow):
     """Application window with docked sidebar, central tabs and status bar."""
 
@@ -85,6 +106,15 @@ class MainWindow(QMainWindow):
             on_cleared=self._on_worker_cleared,
         )
         self._loaded_kml_path = ""
+        self._project_store = ProjectStore(
+            _resolve_projects_dir(config_manager.config.projects_dir)
+        )
+        seeded = bootstrap_from_config(self._project_store, config_manager.config)
+        if seeded is not None and not config_manager.config.active_project:
+            # The migrated settings *are* the active corridor; recording it is
+            # what arms the "this folder is not from this job" guard on the
+            # very first launch instead of after the operator picks it by hand.
+            config_manager.update_config(active_project=seeded.name)
         self._analysis_items: List[PhotoItem] = []
         #: Latest corridor coverage QA (set by ``_apply_preview``).
         self._coverage: Optional[CoverageReport] = None
@@ -109,6 +139,7 @@ class MainWindow(QMainWindow):
         self._build_statusbar()
         self._build_menu()
         self._apply_stored_state()
+        self._refresh_projects()
         self._connect_signals()
         self._restore_last_session()
         self.sidebar.set_has_analysis(bool(self._analysis_items))
@@ -309,6 +340,167 @@ class MainWindow(QMainWindow):
         needs_attention = bool(interior or cov.missing_pks)
         return f"{' · '.join(bits)}<br>", needs_attention
 
+    # ------------------------------------------------------------------
+    # Obras (proyectos)
+    # ------------------------------------------------------------------
+    def _refresh_projects(self) -> None:
+        projects = self._project_store.load_all()
+        self.sidebar.set_projects(
+            [p.name for p in projects], self.config_manager.config.active_project
+        )
+
+    @Slot(str)
+    def _on_project_changed(self, name: str) -> None:
+        """Operator picked a corridor from the selector."""
+        if not name:
+            self.config_manager.update_config(active_project="")
+            return
+        project = self._project_store.find(name)
+        if project is None:
+            self._error(f"No se encontró la obra «{name}».")
+            self._refresh_projects()
+            return
+        self._apply_project(project, clear_analysis=True)
+
+    def _apply_project(self, project: Project, *, clear_analysis: bool) -> None:
+        """Load a corridor's rules into the live config, sidebar and calculator.
+
+        The rest of the app keeps reading its settings from ``AppConfig``, so
+        applying a project writes them there: workers, ``ensure_work_folders``
+        and the renamer need no knowledge of projects.
+        """
+        cfg = self.config_manager.config
+        self.config_manager.update_config(
+            active_project=project.name,
+            last_kml=project.kml or cfg.last_kml,
+            threshold=project.threshold or cfg.threshold,
+            last_suffix=project.suffix or cfg.last_suffix,
+            extra_landmarks=list(project.extra_landmarks),
+            landmark_kmls=list(project.landmark_kmls),
+            landmark_groups=list(project.landmark_groups),
+            landmark_capture_radius=project.landmark_capture_radius,
+            landmark_threshold=project.landmark_threshold,
+            landmark_cluster_radius=project.landmark_cluster_radius,
+            landmark_split_ratio=project.landmark_split_ratio,
+            viaduct_pks=list(project.viaduct_pks),
+        )
+        self.sidebar.select_project(project.name)
+        self.sidebar.set_values(
+            kml_file=project.kml,
+            suffix=project.suffix,
+            threshold=project.threshold,
+        )
+        self._sync_renamer_settings()
+
+        if clear_analysis and self._analysis_items:
+            # Photos analysed under another corridor's rules must not survive:
+            # their PK, routing and landmark labels no longer mean anything.
+            self._analysis_items = []
+            self.preview_tab.set_items([])
+            self.preview_tab.update_preview([], plan={})
+            self.sidebar.set_has_analysis(False)
+            self._coverage = None
+
+        loaded = ""
+        if project.kml and os.path.isfile(project.kml):
+            try:
+                self.spatial_calc.load_kml(project.kml)
+                self._apply_extra_landmarks()
+                self._loaded_kml_path = project.kml
+                loaded = f" · traza {os.path.basename(project.kml)}"
+            except Exception:
+                logger.exception("No se pudo cargar la traza de la obra %s", project.name)
+                self._error(
+                    f"La obra «{project.name}» se ha activado, pero su traza no se "
+                    f"pudo cargar:\n{project.kml}"
+                )
+        elif project.kml:
+            self._error(
+                f"La traza de «{project.name}» no está accesible:\n{project.kml}\n\n"
+                "Comprueba la conexión con el servidor."
+            )
+
+        self.status_message.setText(f"Obra activa: {project.name}{loaded}.")
+        self._update_workflow_banner()
+        logger.info("Obra activa: %s (traza=%s)", project.name, project.kml or "—")
+
+    @Slot(str)
+    def _on_folder_changed(self, folder: str) -> None:
+        """Switch corridor automatically when the folder belongs to another one.
+
+        The delivery tree encodes the corridor, so choosing a folder is enough
+        to know which rules apply — and this is what stops one client's rules
+        being applied to another's delivery.
+        """
+        self._update_workflow_banner()
+        if not folder:
+            return
+        match = self._project_store.match_for_path(folder)
+        if match is None or match.name == self.config_manager.config.active_project:
+            return
+        self._apply_project(match, clear_analysis=True)
+        self.status_message.setText(
+            f"Obra detectada por la ruta: {match.name}. Se han cargado su traza y ajustes."
+        )
+
+    @Slot()
+    def _save_current_as_project(self) -> None:
+        """Store the current settings as a reusable corridor."""
+        cfg = self.sidebar.get_config()
+        self._persist_state()
+        snapshot = project_from_config(self.config_manager.config)
+        suggested = self.config_manager.config.active_project or snapshot.name
+        name, ok = QInputDialog.getText(
+            self, "Guardar obra", "Nombre de la obra:", text=suggested
+        )
+        name = (name or "").strip()
+        if not ok or not name:
+            return
+
+        snapshot.name = name
+        snapshot.kml = cfg.kml_file or snapshot.kml
+        snapshot.threshold = cfg.threshold
+        snapshot.suffix = cfg.suffix
+        if not snapshot.root:
+            snapshot.root = os.path.dirname(cfg.folder or "") or snapshot.root
+
+        existing = self._project_store.find(name)
+        if existing is not None:
+            answer = QMessageBox.question(
+                self,
+                "Sobrescribir obra",
+                f"Ya existe la obra «{existing.name}». ¿Actualizarla con los "
+                "ajustes actuales?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return
+
+        try:
+            path = self._project_store.save(snapshot)
+        except OSError as exc:
+            self._error(f"No se pudo guardar la obra: {exc}")
+            return
+
+        self.config_manager.update_config(active_project=snapshot.name)
+        self._refresh_projects()
+        self.sidebar.select_project(snapshot.name)
+        self._info(
+            f"Obra «{snapshot.name}» guardada en:\n{path}\n\n"
+            f"Ámbito: {snapshot.root or '(sin raíz)'}"
+        )
+
+    def _folder_outside_active_project(self, folder: str) -> Optional[Project]:
+        """Active corridor when ``folder`` does not belong to it, else ``None``."""
+        name = self.config_manager.config.active_project
+        if not name or not folder:
+            return None
+        project = self._project_store.find(name)
+        if project is None or not project.root:
+            return None
+        return None if project.contains(folder) else project
+
     def _apply_threshold_value(self, value: float) -> None:
         """Set the sidebar threshold without re-entering the preview debounce loop."""
         spin = self.sidebar.threshold_spin
@@ -382,9 +574,11 @@ class MainWindow(QMainWindow):
         self.sidebar.generate_map_requested.connect(self._on_generate_map)
         self.sidebar.auto_threshold_requested.connect(self._on_auto_threshold)
         self.sidebar.open_folder_requested.connect(self._open_folder)
+        self.sidebar.project_changed.connect(self._on_project_changed)
+        self.sidebar.save_project_requested.connect(self._save_current_as_project)
         self.sidebar.threshold_spin.valueChanged.connect(self._on_preview_params_changed)
         self.sidebar.suffix_edit.textChanged.connect(self._on_preview_params_changed)
-        self.sidebar.folder_selector.changed.connect(lambda _t: self._update_workflow_banner())
+        self.sidebar.folder_selector.changed.connect(self._on_folder_changed)
         self.sidebar.kml_selector.changed.connect(lambda _t: self._update_workflow_banner())
         self.preview_tab.show_on_map_requested.connect(self._show_photo_on_map)
         self.preview_tab.exclusion_changed.connect(self._on_preview_params_changed)
@@ -478,6 +672,26 @@ class MainWindow(QMainWindow):
         if not cfg.kml_file or not os.path.isfile(cfg.kml_file):
             self._error("Selecciona un archivo KML/KMZ/GeoJSON válido antes de analizar.")
             return
+
+        # Analysing with another corridor's rules fails silently: its landmarks
+        # are too far to capture anything and its viaduct PKs never match, yet
+        # ensure_work_folders still creates that corridor's folders here.
+        foreign = self._folder_outside_active_project(cfg.folder)
+        if foreign is not None:
+            answer = QMessageBox.warning(
+                self,
+                "La carpeta no es de esta obra",
+                f"La obra activa es «{foreign.name}», cuyo ámbito es:\n"
+                f"{foreign.root}\n\n"
+                f"La carpeta elegida está fuera:\n{cfg.folder}\n\n"
+                "Se aplicarán los vertederos, viaductos y umbral de "
+                f"«{foreign.name}», y se crearán sus carpetas de trabajo aquí.\n\n"
+                "¿Continuar de todas formas?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return
 
         self._persist_state()
         self._push_recent("recent_folders", cfg.folder)
