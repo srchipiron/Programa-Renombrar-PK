@@ -14,14 +14,13 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from ..core.models import PhotoItem
+from ..core.paths import logs_dir
 
 logger = logging.getLogger(__name__)
 
-# Resolve against the project root (same pattern as undo_history) so the
-# session file is not silently written relative to whatever CWD the user
-# launched the app from.
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_SESSION_PATH = _PROJECT_ROOT / "logs" / "last_session.json"
+# Written to the app's data directory (see ``core.paths``): next to the
+# executable when writable, under %LOCALAPPDATA% for an installed copy.
+DEFAULT_SESSION_PATH = logs_dir() / "last_session.json"
 
 #: Field names accepted by :class:`PhotoItem`, used to drop stale keys from
 #: sessions saved by older app versions instead of failing to restore.

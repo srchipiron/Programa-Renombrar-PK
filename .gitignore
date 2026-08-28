@@ -18,4 +18,5 @@ logs/
 # PyInstaller build artifacts
 build/
 dist/
+dist_installer/
 *.manifest

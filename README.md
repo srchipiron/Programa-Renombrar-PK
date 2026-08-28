@@ -53,32 +53,45 @@ python main.py
 ```
 O simplemente haz doble clic en **`ejecutar.bat`** (o ejecuta `ejecutar.bat` en la terminal).
 
-## 📦 Generar Ejecutable (.exe)
+## 📦 Entregar el programa a otro PC
 
-Se incluye una configuración de PyInstaller lista para empaquetar la aplicación
-como un ejecutable de Windows con todo el runtime de Qt WebEngine embebido.
+Un solo comando genera las tres formas de entrega:
 
-### 1. Instalar dependencias de build
-```bash
-pip install -r requirements-build.txt
-```
-
-### 2. Construir el bundle
 ```bash
 build.bat
 ```
 
-El resultado queda en `dist\RenombradorPKS\` (carpeta portable). Para lanzar la
-app basta con ejecutar `dist\RenombradorPKS\RenombradorPKS.exe` o distribuir
-toda la carpeta.
+| Forma | Qué se envía | Requisitos en el PC destino |
+|-------|--------------|------------------------------|
+| **Carpeta portable** | `dist\RenombradorPKS\` completa | Ninguno: ni Python ni administrador |
+| **ZIP** | `dist\RenombradorPKS-portable.zip` | Descomprimir y ejecutar `RenombradorPKS.exe` |
+| **Instalador** | `dist_installer\RenombradorPKS_Setup_*.exe` | Ninguno (requiere Inno Setup **en el PC que compila**) |
 
-> **Nota**: el bundle ocupa ~700 MB porque incluye el runtime completo de
-> `QtWebEngine` (Chromium embebido) necesario para el mapa interactivo. Si no
-> necesitas el mapa embebido, se podría generar una variante sin WebEngine
-> editando `RenombradorPKS.spec`.
+El instalador solo se genera si tienes Inno Setup; si no, `build.bat` lo dice y
+sigue adelante con las otras dos:
 
-Para reconstruir desde cero, borra las carpetas `build\` y `dist\` antes de
-lanzar `build.bat` (el script ya lo hace automáticamente).
+```bash
+winget install JRSoftware.InnoSetup
+```
+
+### Dónde guarda sus datos
+
+`config.json`, `proyectos\` y `logs\` se crean **junto al ejecutable** cuando esa
+carpeta admite escritura — así una copia portable o un USB van completos. Si no
+(por ejemplo instalado en `Archivos de programa`), pasan a
+`%LOCALAPPDATA%\RenombradorPKS`. Lo resuelve `src/core/paths.py`.
+
+### Llevarte tus obras a otro PC
+
+Las obras son ficheros sueltos: copia `proyectos\*.json` a la carpeta de datos del
+PC destino. Si no copias nada, el programa arranca limpio y crea su
+`config.json` a partir de `config.example.json`.
+
+> **Tamaño**: el bundle ocupa ~700 MB porque incluye el runtime completo de
+> `QtWebEngine` (Chromium) que necesita el mapa embebido. El ZIP baja bastante.
+> Una variante sin mapa embebido pesaría mucho menos, pero hoy `map_tab.py`
+> importa QtWebEngine al cargar el módulo, así que requeriría degradar esa
+> pestaña con elegancia primero.
 
 ## 📦 Dependencias
 

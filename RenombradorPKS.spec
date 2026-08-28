@@ -28,30 +28,17 @@ pyside_datas, pyside_binaries, pyside_hidden = collect_all("PySide6")
 shiboken_datas, shiboken_binaries, shiboken_hidden = collect_all("shiboken6")
 
 
+# Every module under ``src`` becomes a hidden import. Derived from the tree
+# instead of a hand-written list: the previous list had gone stale and was
+# missing modules added since (projects, coverage, paths, ...).
+src_modules = sorted(
+    ".".join(path.relative_to(PROJECT_ROOT).with_suffix("").parts)
+    for path in (PROJECT_ROOT / "src").rglob("*.py")
+    if path.name != "__init__.py" and "__pycache__" not in path.parts
+)
+
 hiddenimports = [
-    "src.ui_qt.app",
-    "src.ui_qt.main_window",
-    "src.ui_qt.sidebar",
-    "src.ui_qt.preview_tab",
-    "src.ui_qt.map_tab",
-    "src.ui_qt.log_tab",
-    "src.ui_qt.help_tab",
-    "src.ui_qt.workers",
-    "src.ui_qt.theme",
-    "src.ui_qt.log_handler",
-    "src.ui_qt.histogram",
-    "src.ui_qt.undo_history",
-    "src.ui_qt.undo_dialog",
-    "src.ui_qt.video_dialog",
-    "src.core.renamer_logic",
-    "src.core.rename_report",
-    "src.core.types",
-    "src.core.spatial_calculator",
-    "src.core.config",
-    "src.core.logging_config",
-    "src.core.models",
-    "src.core.video_extractor",
-    "src.map_component",
+    *src_modules,
     *pyside_hidden,
     *shiboken_hidden,
 ]
@@ -63,6 +50,11 @@ datas = [*pyside_datas, *shiboken_datas]
 # embedded map renders offline even when no CDN is reachable.  ``*_raw.*``
 # files are build-time artefacts (e.g. the magenta icon master) and must not
 # ship inside the bundle.
+# The first run copies this to create config.json, so it must ship.
+config_example = PROJECT_ROOT / "config.example.json"
+if config_example.is_file():
+    datas.append((str(config_example), "."))
+
 assets_dir = PROJECT_ROOT / "src" / "assets"
 if assets_dir.is_dir():
     for path in assets_dir.rglob("*"):

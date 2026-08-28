@@ -23,6 +23,7 @@ from PySide6.QtWidgets import QApplication
 
 from ..core.config import ConfigManager
 from ..core.logging_config import initialize_logging
+from ..core.paths import logs_dir
 from . import theme as theme_module
 from .log_handler import QtLogHandler
 from .main_window import MainWindow
@@ -76,7 +77,9 @@ def main(argv: Optional[list] = None) -> int:
     config_manager = ConfigManager()
     cfg = config_manager.config
 
-    initialize_logging(log_level=cfg.log_level)
+    # Logs go to the data directory, not to whatever the working directory
+    # happens to be when the shortcut launches the app.
+    initialize_logging(log_dir=str(logs_dir()), log_level=cfg.log_level)
     log_handler = _install_qt_log_handler(cfg.log_level)
 
     app.setStyleSheet(theme_module.get_stylesheet(cfg.theme))

@@ -15,7 +15,7 @@ from src.core.orientation import extract_jpeg_xmp_packet, inject_jpeg_xmp_packet
 from src.core.rename_report import load_rename_mapping
 from src.core.renamer_logic import RenamerLogic
 from src.core.spatial_calculator import SpatialCalculator
-from src.ui_qt.session_store import DEFAULT_SESSION_PATH, _PROJECT_ROOT
+from src.ui_qt.session_store import DEFAULT_SESSION_PATH
 
 
 class _DummySpatialCalculator:
@@ -503,9 +503,17 @@ class TestLandmarkOutsideRadius(unittest.TestCase):
 
 
 class TestSessionDefaultPath(unittest.TestCase):
-    def test_default_session_path_is_absolute_under_project_logs(self) -> None:
+    def test_default_session_path_is_absolute_under_the_data_logs(self) -> None:
+        """Never relative to the working directory the shortcut launched from.
+
+        The folder itself moved: state now lives in the app's data directory
+        (next to the executable, or %LOCALAPPDATA% for a read-only install),
+        which is what lets an installed copy save at all.
+        """
+        from src.core.paths import logs_dir
+
         self.assertTrue(DEFAULT_SESSION_PATH.is_absolute())
-        self.assertEqual(DEFAULT_SESSION_PATH.parent, _PROJECT_ROOT / "logs")
+        self.assertEqual(DEFAULT_SESSION_PATH.parent, logs_dir())
         self.assertEqual(DEFAULT_SESSION_PATH.name, "last_session.json")
 
 

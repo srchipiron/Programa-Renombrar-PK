@@ -28,6 +28,7 @@ from ..core.config import ConfigManager
 from ..core.coverage import CoverageReport, compute_coverage
 from ..core.geojson_export import export_analysis_geojson
 from ..core.models import PhotoItem
+from ..core.paths import data_dir
 from ..core.projects import (
     Project,
     ProjectStore,
@@ -75,13 +76,13 @@ _METHOD_LABELS = {
 def _resolve_projects_dir(configured: str) -> Path:
     """Absolute path of the corridor definitions directory.
 
-    Relative values resolve against the project root (next to ``main.py``), the
-    same rule the session store and the undo history follow, so the list does
-    not depend on the working directory the app was launched from.
+    Relative values resolve against the app's data directory, the same rule the
+    config, the session store and the undo history follow, so the list neither
+    depends on the working directory nor breaks on a read-only install.
     """
     path = Path(configured or "proyectos")
     if not path.is_absolute():
-        path = Path(__file__).resolve().parents[2] / path
+        path = data_dir() / path
     return path
 
 

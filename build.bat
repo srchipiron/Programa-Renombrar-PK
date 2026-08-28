@@ -73,24 +73,71 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
-REM ── Resultado ─────────────────────────────────────────────────────
+REM -- Empaquetar portable (ZIP) -------------------------------------
+echo.
+echo [5/6] Empaquetando version portable...
+set "ZIP_NAME=RenombradorPKS-portable.zip"
+if exist "dist\%ZIP_NAME%" del /q "dist\%ZIP_NAME%"
+REM tar viene con Windows 10/11 y comprime mucho mas rapido que Compress-Archive.
+where tar >nul 2>&1
+if %ERRORLEVEL%==0 (
+    pushd dist
+    tar -a -c -f "%ZIP_NAME%" "RenombradorPKS"
+    popd
+) else (
+    powershell -NoProfile -Command "Compress-Archive -Path 'dist\RenombradorPKS' -DestinationPath 'dist\%ZIP_NAME%' -Force"
+)
+if exist "dist\%ZIP_NAME%" (
+    echo      Portable listo: dist\%ZIP_NAME%
+) else (
+    echo      [AVISO] No se pudo crear el ZIP portable.
+)
+
+REM -- Instalador (opcional, si hay Inno Setup) -----------------------
+echo.
+echo [6/6] Instalador...
+set "ISCC="
+where iscc >nul 2>&1
+if %ERRORLEVEL%==0 set "ISCC=iscc"
+if not defined ISCC if exist "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" set "ISCC=%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
+if not defined ISCC if exist "%ProgramFiles%\Inno Setup 6\ISCC.exe" set "ISCC=%ProgramFiles%\Inno Setup 6\ISCC.exe"
+
+if defined ISCC (
+    "%ISCC%" installer.iss
+    if !ERRORLEVEL!==0 (
+        echo      Instalador listo en dist_installer\
+    ) else (
+        echo      [AVISO] Inno Setup devolvio error.
+    )
+) else (
+    echo      Inno Setup no encontrado: se omite el instalador.
+    echo      Para generarlo:  winget install JRSoftware.InnoSetup
+    echo      y vuelve a ejecutar este script.
+)
+
+REM -- Resultado -----------------------------------------------------
 echo.
 echo =================================================================
-echo   BUILD COMPLETADO CON EXITO
+echo   BUILD COMPLETADO
 echo =================================================================
-echo.
-echo   Ejecutable: dist\RenombradorPKS\RenombradorPKS.exe
 echo.
 set "DIST_SIZE="
-for /f %%A in ('powershell -NoProfile -Command "(Get-ChildItem -Recurse dist\RenombradorPKS | Measure-Object -Property Length -Sum).Sum / 1MB" 2^>nul') do set "DIST_SIZE=%%A"
-if defined DIST_SIZE echo   Tamano carpeta dist: %DIST_SIZE% MB aprox.
+for /f %%A in ('powershell -NoProfile -Command "[int]((Get-ChildItem -Recurse dist\RenombradorPKS | Measure-Object -Property Length -Sum).Sum / 1MB)" 2^>nul') do set "DIST_SIZE=%%A"
+set "ZIP_SIZE="
+for /f %%A in ('powershell -NoProfile -Command "[int]((Get-Item 'dist\%ZIP_NAME%' -ErrorAction SilentlyContinue).Length / 1MB)" 2^>nul') do set "ZIP_SIZE=%%A"
+
+echo   1) Carpeta portable : dist\RenombradorPKS\  (%DIST_SIZE% MB)
+echo      Copiala entera al PC destino y ejecuta RenombradorPKS.exe.
+echo      No necesita Python ni permisos de administrador.
 echo.
-echo   Para distribuir: copia la carpeta dist\RenombradorPKS completa.
-echo   El .exe funciona sin Python instalado en el PC destino.
+if defined ZIP_SIZE echo   2) ZIP para enviar  : dist\%ZIP_NAME%  (%ZIP_SIZE% MB)
+if not defined ZIP_SIZE echo   2) ZIP para enviar  : no generado
 echo.
-echo   Para generar instalador .exe (opcional, requiere Inno Setup 6):
-echo     iscc installer.iss
-echo     Descarga: https://jrsoftware.org/isinfo.php
+if defined ISCC echo   3) Instalador       : dist_installer\
+if not defined ISCC echo   3) Instalador       : requiere Inno Setup 6
+echo.
+echo   Los ajustes (config.json, proyectos\, logs\) se crean junto al
+echo   ejecutable si la carpeta es escribible; si no, en %%LOCALAPPDATA%%.
 echo.
 pause
 endlocal

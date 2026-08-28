@@ -104,10 +104,13 @@ class TestUndoHistoryDefaultPath(unittest.TestCase):
             f"_DEFAULT_DB_PATH must be absolute, got: {_DEFAULT_DB_PATH}",
         )
 
-    def test_default_db_path_inside_project_logs(self) -> None:
-        from src.ui_qt.undo_history import _DEFAULT_DB_PATH, _PROJECT_ROOT
-        # The DB must live under <project>/logs/
-        self.assertEqual(_DEFAULT_DB_PATH.parent, _PROJECT_ROOT / "logs")
+    def test_default_db_path_inside_the_data_logs(self) -> None:
+        from src.core.paths import logs_dir
+        from src.ui_qt.undo_history import _DEFAULT_DB_PATH
+
+        # Data directory, not the install folder: an installed copy under
+        # Program Files could not write there.
+        self.assertEqual(_DEFAULT_DB_PATH.parent, logs_dir())
         self.assertEqual(_DEFAULT_DB_PATH.name, "undo_history.sqlite")
 
     def test_sqlite_timeout_is_set(self) -> None:

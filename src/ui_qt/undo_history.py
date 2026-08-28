@@ -17,14 +17,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence
 
+from ..core.paths import logs_dir
 from ..core.rename_report import undo_rename_operations
 
 logger = logging.getLogger(__name__)
 
-# Resolve the project root (src/ui_qt/ → src/ → project root) so the default
-# DB path is always next to main.py, not relative to the current working dir.
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_DB_PATH = _PROJECT_ROOT / "logs" / "undo_history.sqlite"
+# Stored in the app's data directory (see ``core.paths``) so an installed
+# copy under Program Files still has somewhere to write.
+_DEFAULT_DB_PATH = logs_dir() / "undo_history.sqlite"
 
 
 @dataclass

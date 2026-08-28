@@ -10,8 +10,9 @@ from typing import Any, ClassVar, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_CONFIG_EXAMPLE = _PROJECT_ROOT / "config.example.json"
+from .paths import data_dir, resource_dir
+
+_CONFIG_EXAMPLE = resource_dir() / "config.example.json"
 
 
 @dataclass
@@ -141,12 +142,12 @@ class ConfigManager:
     """Manages application configuration with persistence and validation."""
 
     def __init__(self, config_file: Optional[str] = None):
-        # Resolve the default path relative to the *project root* (two levels
-        # above this file: src/core/ → src/ → project root) so the config is
-        # always found next to main.py regardless of the working directory the
-        # user launched the process from.
+        # The config lives in the app's data directory: next to the
+        # executable when that folder is writable (portable copy), under
+        # %LOCALAPPDATA% when it is not (installed under Program Files).
+        # See ``core.paths``.
         if config_file is None:
-            config_file = str(_PROJECT_ROOT / "config.json")
+            config_file = str(data_dir() / "config.json")
         self.config_file = Path(config_file)
         self._config: AppConfig = AppConfig()
         self._load_config()
