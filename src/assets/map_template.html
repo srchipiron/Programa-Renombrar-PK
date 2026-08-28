@@ -173,7 +173,11 @@
             .replace(/'/g, '&#39;');
         }
 
-        var map = L.map('map', { zoomControl: false }).setView([__CENTER_LAT__, __CENTER_LON__], 14);
+        // preferCanvas: los hitos y la traza se pintan en un unico canvas.
+        // Con ~300 hitos eso son 300 nodos DOM menos que Leaflet tiene que
+        // recolocar en cada arrastre y cada zoom, y la app corre Chromium
+        // con la GPU desactivada, asi que todo eso lo pinta la CPU.
+        var map = L.map('map', { zoomControl: false, preferCanvas: true }).setView([__CENTER_LAT__, __CENTER_LON__], 14);
         L.control.zoom({ position: 'bottomleft' }).addTo(map);
 
         // Capas cartográficas oficiales y globales.
@@ -234,15 +238,27 @@
         }
 
         var kmlPoints = __KML_POINTS_JSON__;
-        var kmlIcon = L.divIcon({
-          html: '<div style="background:#3b82f6;width:10px;height:10px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 10px #3b82f6;"></div>',
-          className: '', iconSize: [14, 14]
-        });
-
+        // Los hitos no se agrupan nunca, asi que antes estaban TODOS en el DOM
+        // a cualquier zoom. Como circleMarker viven en el canvas del mapa.
+        var kmlLayer = L.layerGroup();
         kmlPoints.forEach(function(pt) {
-          L.marker([pt.lat, pt.lon], {icon: kmlIcon}).addTo(map)
-           .bindPopup('<div style="background:rgba(15,23,42,0.95);color:#fff;padding:8px 12px;border-radius:6px;"><b>📍 Hito:</b> ' + esc(pt.name) + '</div>');
+          L.circleMarker([pt.lat, pt.lon], {
+            radius: 5, weight: 2, color: '#ffffff', opacity: 0.9,
+            fillColor: '#3b82f6', fillOpacity: 1
+          })
+           .bindPopup('<div style="background:rgba(15,23,42,0.95);color:#fff;padding:8px 12px;border-radius:6px;"><b>📍 Hito:</b> ' + esc(pt.name) + '</div>')
+           .addTo(kmlLayer);
         });
+        kmlLayer.addTo(map);
+
+        // El contenedor puede medir 0 cuando se crea el mapa: la vista embebida
+        // se instancia antes de que Qt le de geometria. Con marcadores DOM no se
+        // notaba (Leaflet los coloca igual), pero el lienzo del canvas se queda
+        // a 0x0 y no se pinta nada. Revalidar el tamano lo resuelve.
+        function revalidarTamano() { map.invalidateSize(false); }
+        window.addEventListener('resize', revalidarTamano);
+        setTimeout(revalidarTamano, 0);
+        setTimeout(revalidarTamano, 400);
 
         var photos = __PHOTOS_JSON__;
         var markers = L.markerClusterGroup({ maxClusterRadius: 40, spiderfyOnMaxZoom: true, showCoverageOnHover: false, zoomToBoundsOnClick: true });

@@ -256,6 +256,22 @@ python -m pytest tests/ --cov=src --cov-report=html
 
 ## 📝 Registro de Cambios
 
+### v3.6 - Rendimiento del visor y de las miniaturas
+- 🗺️ **Hitos PK en canvas**: dejaban ~300 nodos DOM en el mapa a cualquier zoom, que
+  Leaflet recolocaba en cada arrastre. Medido con el Leaflet real y volumen real
+  (315 hitos + 238 fotos): **553 nodos → 0**, y **44 ms → 11 ms** por tanda de
+  movimientos (**4×**). Cuenta doble porque la app corre Chromium con la GPU
+  desactivada y lo pinta todo la CPU
+- 🐛 **El mapa ya no puede quedarse en blanco** si la vista se crea con tamaño 0:
+  se revalida el tamaño al cargar y al redimensionar
+- 🖼️ **Miniatura instantánea**: se muestra la vista previa que la cámara embebe en el
+  fichero (**123 ms → 17 ms** para ver algo) y se sustituye por la de calidad al llegar
+- 🖼️ **Caché LRU de miniaturas**: volver a una foto ya vista es instantáneo, antes
+  costaba otros 123 ms
+- 🖼️ Para la miniatura embebida se leen **128 KB de cabecera** en vez de los 14 MB del
+  fichero: sobre recursos de red es 100× menos tráfico
+- 🧪 351 tests (antes 341)
+
 ### v3.5 - Selector de obra
 - 🏗️ **Cada obra con su lógica**: traza, vertederos, viaductos, umbral y sufijo dejan de
   ser globales. Un JSON por obra en `proyectos/` y un desplegable en el panel
