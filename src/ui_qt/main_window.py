@@ -70,6 +70,7 @@ _METHOD_LABELS = {
     "small_sample": "muestra pequeña",
     "iqr_strict": "IQR estricto (Q3 + 1.5·IQR)",
     "iqr_relaxed": "IQR relajado (media con P90)",
+    "gap": "corte en el salto de distancias",
 }
 
 
@@ -1487,6 +1488,18 @@ class MainWindow(QMainWindow):
             f"Umbral automático: {threshold:.1f} m · {method_label} · "
             f"{samples} muestras · mediana {median_d:.1f} m · P90 {p90:.1f} m."
         )
+        # Cuando el corte viene de un salto, el salto ES la explicación: dice
+        # cuántas fotos quedan dentro y por qué mover el umbral dentro de ese
+        # rango no cambia nada.
+        detalle = ""
+        if payload.get("gap_low") is not None:
+            detalle = (
+                f"\n\nSalto detectado: de {float(payload['gap_low']):.1f} m a "
+                f"{float(payload['gap_high']):.1f} m "
+                f"(×{float(payload.get('gap_ratio', 0)):.0f}).\n"
+                f"{int(payload.get('gap_inside', 0))} fotos quedan por debajo; "
+                "cualquier umbral dentro del salto da el mismo resultado."
+            )
         self._info(
             "Umbral automático propuesto\n\n"
             f"Valor: {threshold:.1f} m\n"
@@ -1494,6 +1507,7 @@ class MainWindow(QMainWindow):
             f"Muestras: {samples}\n"
             f"Rango observado: {min_d:.1f} – {max_d:.1f} m\n"
             f"Media: {mean_d:.1f} m · Mediana: {median_d:.1f} m · P90: {p90:.1f} m"
+            f"{detalle}"
         )
         self._persist_state()
         if self.config_manager.config.auto_refresh_preview:

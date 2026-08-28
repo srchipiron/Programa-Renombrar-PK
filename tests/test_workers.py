@@ -70,8 +70,9 @@ class TestWorkers(unittest.TestCase):
 
     def test_auto_threshold_worker_ignores_extreme_outliers(self) -> None:
         # Old mean+2*stdev algo would push threshold above 1000 m on such
-        # data; the new worker should return a value well inside the sane
-        # topographic window and pick the strict IQR branch.
+        # data. This sample is bimodal, so the gap branch handles it now and
+        # the evidence travels with the payload; either way the value must
+        # stay inside the sane topographic window and keep the real photos.
         distances = list(range(5, 20)) + [5000, 5000, 5000]
         items = [
             PhotoItem(path=f"/tmp/{i}.jpg", name=f"{i}.jpg", lat=0.0, lon=0.0, distance=float(d))
@@ -82,7 +83,11 @@ class TestWorkers(unittest.TestCase):
         worker.run()
         payload = capture.finished[0]
         self.assertLess(payload["threshold"], 100.0)
-        self.assertEqual(payload["method"], "iqr_strict")
+        self.assertEqual(
+            sum(1 for d in distances if d <= payload["threshold"]), 15
+        )
+        self.assertEqual(payload["method"], "gap")
+        self.assertEqual(payload["gap_inside"], 15)
 
     # ------------------------------------------------------------------
     def test_analysis_worker_emits_progress_and_finished(self) -> None:

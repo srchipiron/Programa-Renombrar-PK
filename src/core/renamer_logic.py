@@ -47,6 +47,26 @@ AUTO_THRESHOLD_MIN = 10.0
 AUTO_THRESHOLD_MAX = 250.0
 AUTO_THRESHOLD_DEFAULT = 30.0
 
+# Corridor deliveries are bimodal: a tight cluster of photos on the trace and a
+# handful taken somewhere else entirely (take-off, a different site). Measured
+# on two real jobs, the split is unmistakable -- Torre Pacheco jumps from 10.8 m
+# to 44.6 m, Lorca-Pulpí from 23.9 m to 112 m -- and between the two groups any
+# threshold gives the same answer. Cutting at that jump finds the boundary
+# without asking the operator to tune a multiplier: with the default Tukey k
+# they lost 1 and 4 corridor photos respectively, which is why the config had
+# been edited to k=3.
+#: A jump must be at least this many times the previous distance to count.
+GAP_MIN_RATIO = 3.0
+#: ...and must leave at least this share of the sample on the corridor side.
+GAP_MIN_SHARE = 0.5
+#: Jumps below this distance are GNSS jitter, not the edge of the corridor.
+GAP_FLOOR_M = 1.0
+#: Margin added past the last corridor photo. Consumer GNSS scatters a couple
+#: of metres between flights, so the threshold must not sit flush against it.
+GAP_MARGIN_M = 3.0
+#: Fewer samples than this and a "gap" is just noise.
+GAP_MIN_SAMPLES = 8
+
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".tif", ".tiff")
 
 # Sidecar extensions that travel alongside a photo (same basename) and must be
@@ -285,6 +305,8 @@ def compute_suggested_threshold(
     except statistics.StatisticsError:
         stdev_d = 0.0
 
+    gap = find_distance_gap(sorted_d)
+
     if samples == 1:
         suggested = max(AUTO_THRESHOLD_MIN, min(sorted_d[0] * 1.25, AUTO_THRESHOLD_MAX))
         method = "single_sample"
@@ -295,6 +317,10 @@ def compute_suggested_threshold(
     elif samples < 4:
         suggested = max_d * 1.05 if max_d > 0 else AUTO_THRESHOLD_DEFAULT
         method = "small_sample"
+    elif gap is not None:
+        # The sample splits in two: cut at the jump instead of at a quantile.
+        suggested = _threshold_from_gap(gap)
+        method = "gap"
     else:
         upper_bound = q3 + (tukey_multiplier * iqr)
         # If P90 itself lies beyond what we consider a sane topographic range
@@ -316,7 +342,7 @@ def compute_suggested_threshold(
 
     suggested = max(AUTO_THRESHOLD_MIN, min(float(suggested), AUTO_THRESHOLD_MAX))
 
-    return {
+    result: Dict[str, Any] = {
         "suggested": suggested,
         "method": method,
         "samples": samples,
@@ -330,6 +356,12 @@ def compute_suggested_threshold(
         "iqr": iqr,
         "p90": p90,
     }
+    if gap is not None:
+        result["gap_low"] = gap["low"]
+        result["gap_high"] = gap["high"]
+        result["gap_ratio"] = gap["ratio"]
+        result["gap_inside"] = gap["inside"]
+    return result
 
 def histogram_axis_upper(
     distances: List[float],
@@ -367,6 +399,51 @@ def histogram_axis_upper(
 
     upper = max(candidates)
     return min(upper, max_d) if max_d > 0 else max(floor_m, upper)
+
+
+def find_distance_gap(sorted_values: List[float]) -> Optional[Dict[str, Any]]:
+    """Locate the jump that separates corridor photos from the rest.
+
+    Scans the upper half of the sorted distances for the largest *relative*
+    jump. Returns ``None`` when there is no dominant one, which is the case for
+    a flight whose distances form a single continuum — there the quartile
+    bound is the better answer.
+
+    The returned dict carries the evidence (``low``/``high``/``ratio``/
+    ``inside``) so the UI can say *why* a threshold was chosen.
+    """
+    n = len(sorted_values)
+    if n < GAP_MIN_SAMPLES:
+        return None
+
+    start = max(1, int(n * GAP_MIN_SHARE))
+    best: Optional[Dict[str, Any]] = None
+    for i in range(start, n - 1):
+        low = sorted_values[i]
+        high = sorted_values[i + 1]
+        if low < GAP_FLOOR_M or high <= low:
+            continue
+        ratio = high / low
+        if best is None or ratio > best["ratio"]:
+            best = {"ratio": ratio, "low": low, "high": high, "inside": i + 1}
+
+    if best is None or best["ratio"] < GAP_MIN_RATIO:
+        return None
+    return best
+
+
+def _threshold_from_gap(gap: Dict[str, Any]) -> float:
+    """Place the threshold just past the last corridor photo.
+
+    Flush against it would drop that photo next month over a metre of GNSS
+    scatter; halfway across the jump would sit in empty space and let a
+    genuinely off-corridor photo in. A few metres past the last inlier, never
+    reaching the first outlier, is the stable choice.
+    """
+    low = float(gap["low"])
+    high = float(gap["high"])
+    candidate = low + max(low * 0.1, GAP_MARGIN_M)
+    return min(candidate, (low + high) / 2.0)
 
 
 def _convert_dms_to_dd(dms, ref) -> float:
