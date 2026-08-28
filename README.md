@@ -87,11 +87,25 @@ Las obras son ficheros sueltos: copia `proyectos\*.json` a la carpeta de datos d
 PC destino. Si no copias nada, el programa arranca limpio y crea su
 `config.json` a partir de `config.example.json`.
 
-> **Tamaño**: el bundle ocupa ~700 MB porque incluye el runtime completo de
-> `QtWebEngine` (Chromium) que necesita el mapa embebido. El ZIP baja bastante.
-> Una variante sin mapa embebido pesaría mucho menos, pero hoy `map_tab.py`
-> importa QtWebEngine al cargar el módulo, así que requeriría degradar esa
-> pestaña con elegancia primero.
+### Tamaños medidos
+
+| Artefacto | Tamaño |
+|-----------|--------|
+| Carpeta `dist\RenombradorPKS\` | 707 MB |
+| `RenombradorPKS-portable.zip` | **262 MB** |
+
+El peso viene del runtime completo de `QtWebEngine` (Chromium) que necesita el
+mapa embebido. El bundle es autónomo de verdad: incluye `vcruntime140.dll`,
+`msvcp140*.dll` y `QtWebEngineProcess.exe`, así que el PC destino no necesita
+Python, ni el runtime de Visual C++, ni permisos de administrador.
+
+> Una variante sin mapa embebido pesaría una fracción, pero hoy `map_tab.py`
+> importa `QtWebEngineWidgets` al cargar el módulo: habría que degradar esa
+> pestaña con elegancia antes de poder excluirlo.
+
+> **Nota de empaquetado**: `tar -a -c -f x.zip` **no comprime**, solo almacena
+> (medido: un DLL de 195 MB seguía ocupando 195 MB). `build.bat` usa 7-Zip si
+> está disponible y `Compress-Archive` si no.
 
 ## 📦 Dependencias
 

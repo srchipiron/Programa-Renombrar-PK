@@ -78,14 +78,20 @@ echo.
 echo [5/6] Empaquetando version portable...
 set "ZIP_NAME=RenombradorPKS-portable.zip"
 if exist "dist\%ZIP_NAME%" del /q "dist\%ZIP_NAME%"
-REM tar viene con Windows 10/11 y comprime mucho mas rapido que Compress-Archive.
-where tar >nul 2>&1
-if %ERRORLEVEL%==0 (
-    pushd dist
-    tar -a -c -f "%ZIP_NAME%" "RenombradorPKS"
-    popd
+
+REM Ojo: "tar -a -c -f x.zip" NO comprime, solo almacena (medido: un DLL de
+REM 195 MB seguia ocupando 195 MB). 7-Zip si lo hace y es el mas rapido;
+REM Compress-Archive es el plan B y viene con Windows.
+set "SEVENZIP="
+where 7z >nul 2>&1 && set "SEVENZIP=7z"
+if not defined SEVENZIP if exist "%ProgramFiles%\7-Zip\7z.exe" set "SEVENZIP=%ProgramFiles%\7-Zip\7z.exe"
+
+if defined SEVENZIP (
+    echo      Comprimiendo con 7-Zip...
+    "%SEVENZIP%" a -tzip -mx=5 -bso0 -bsp0 "dist\%ZIP_NAME%" ".\dist\RenombradorPKS"
 ) else (
-    powershell -NoProfile -Command "Compress-Archive -Path 'dist\RenombradorPKS' -DestinationPath 'dist\%ZIP_NAME%' -Force"
+    echo      Comprimiendo con PowerShell ^(varios minutos^)...
+    powershell -NoProfile -Command "Compress-Archive -Path 'dist\RenombradorPKS' -DestinationPath 'dist\%ZIP_NAME%' -CompressionLevel Optimal -Force"
 )
 if exist "dist\%ZIP_NAME%" (
     echo      Portable listo: dist\%ZIP_NAME%
