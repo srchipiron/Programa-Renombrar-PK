@@ -127,6 +127,14 @@ class AnalysisWorker(_BaseWorker):
 
             if self.kml_path:
                 result["kml_path"] = self.kml_path
+                # Two ways the chainage can be worthless without anything on
+                # screen saying so: no trace at all (every PK answers 0), or a
+                # trace built from the wrong geometry (plausible numbers, all
+                # wrong). The window turns either into a warning.
+                result["kml_has_axis"] = spatial_calc.has_axis()
+                result["kml_axis_trustworthy"] = spatial_calc.axis_looks_trustworthy()
+                result["kml_axis_residual_m"] = spatial_calc.calibration_residual_m()
+                result["kml_axis_summary"] = spatial_calc.axis_summary()
             self.finished.emit(result)
         except Exception as exc:  # pragma: no cover - defensive
             logger.exception("Analysis worker failed")

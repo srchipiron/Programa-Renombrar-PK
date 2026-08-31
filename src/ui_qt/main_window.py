@@ -543,6 +543,7 @@ class MainWindow(QMainWindow):
                 project=proyecto,
                 analysis=analisis,
                 coverage=self._coverage,
+                spatial=self.spatial_calc,
                 qt={"PySide6": pyside_version, "Qt": qVersion()},
             )
         except Exception as exc:  # pragma: no cover - defensive
@@ -1506,6 +1507,12 @@ class MainWindow(QMainWindow):
             except OSError as exc:
                 logger.warning("No se pudieron crear carpetas de trabajo en %s: %s", cfg.folder, exc)
 
+        # Two ways the chainage can be worthless with nothing on screen saying
+        # so, and each client folder holds several similarly named KML of which
+        # only one is the trace.
+        if isinstance(result, dict):
+            self._warn_about_the_trace(result, kml_path)
+
         # Apply the computed threshold before building the preview so the first
         # table the user sees already matches the data distribution (avoids a
         # silent default like 30 m that leaves most photos "Fuera").
@@ -1698,6 +1705,39 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Messaging helpers
     # ------------------------------------------------------------------
+    def _warn_about_the_trace(self, result: dict, kml_path: Optional[str]) -> None:
+        """Tell the operator when the chainage cannot be trusted.
+
+        A KML with no trace answers 0 to every chainage query, so the whole
+        delivery comes out at PK-0+000. A trace built from the wrong geometry
+        is worse: the numbers look like chainage and are not. Measured on the
+        real job — the trace KML reproduces its own 180 anchors to 0.00 m, the
+        client's survey KML in the same folder is out by 18 553 m.
+        """
+        nombre = os.path.basename(kml_path) if kml_path else "el KML elegido"
+        if result.get("kml_has_axis") is False:
+            logger.warning("KML sin traza: %s", kml_path)
+            self._error(
+                f"«{nombre}» no contiene una traza (LineString) ni suficientes "
+                "puntos con PK para deducirla.\n\n"
+                "Todos los puntos kilométricos saldrían a PK-0+000. Revisa el "
+                "KML en la barra lateral antes de renombrar."
+            )
+            return
+        if result.get("kml_axis_trustworthy") is False:
+            residual = result.get("kml_axis_residual_m")
+            medida = f"{residual:.0f} m" if isinstance(residual, (int, float)) else "mucho"
+            logger.warning(
+                "Traza no fiable en %s: se desvía %s de sus propias anclas",
+                kml_path, medida,
+            )
+            self._error(
+                f"La traza de «{nombre}» no reproduce sus propios puntos "
+                f"kilométricos: se desvía {medida} de ellos.\n\n"
+                "Los PK calculados no serían de fiar. Suele significar que el "
+                "KML es el levantamiento del cliente y no el de la traza."
+            )
+
     def _info(self, message: str) -> None:
         QMessageBox.information(self, "Renombrador PKS", message)
 

@@ -23,6 +23,11 @@ class SpatialCalculator:
         # ``project_axis`` stays in WGS84 (lon, lat) so the map can draw it,
         # while ``_axis_metric`` holds the same trace projected to metres.
         self._axis_metric: Optional[LineString] = None
+        # True when the axis came from a LineString in the file; False when it
+        # was synthesised by joining the PK placemarks. The calibration check
+        # is only meaningful in the first case: an axis drawn *through* the
+        # anchors reproduces them exactly whatever they say.
+        self._axis_from_geometry: bool = False
         self._lon0: float = 0.0
         self._lat0: float = 0.0
         self._lon_scale: float = 1.0
@@ -60,6 +65,7 @@ class SpatialCalculator:
         self.named_points = []
         self.pk_offset = 0.0
         self._axis_metric = None
+        self._axis_from_geometry = False
         self._lon0 = 0.0
         self._lat0 = 0.0
         self._lon_scale = 1.0
@@ -198,6 +204,7 @@ class SpatialCalculator:
             if gtype == 'LineString' and not self.project_axis:
                 if coords and len(coords) >= 2:
                     self.project_axis = LineString(coords)
+                    self._axis_from_geometry = True
             elif gtype == 'Point':
                 name = properties.get('name', properties.get('Name', ''))
                 if coords and len(coords) == 2:
@@ -243,6 +250,7 @@ class SpatialCalculator:
                 coords = self._parse_coordinates_text(coords_text)
                 if len(coords) >= 2:
                     self.project_axis = LineString(coords)
+                    self._axis_from_geometry = True
                     return
 
             if len(self.named_points) >= 2:
@@ -254,9 +262,12 @@ class SpatialCalculator:
             logger.warning("No se pudo extraer la traza del KML: %s", exc)
 
         self.project_axis = None
-        logger.info(
+        # WARNING, not INFO: without an axis every calculate_pk answers 0.0,
+        # so the whole delivery comes out at PK-0+000. Three similarly named
+        # KML sit in the same client folder and only one carries the trace.
+        logger.warning(
             "El KML no contiene una traza (LineString) ni suficientes puntos "
-            "nombrados para inferirla; el cálculo de PK quedará deshabilitado."
+            "nombrados para inferirla; todos los PK saldrán a 0."
         )
 
     def _extract_named_points(self, kml_content: bytes) -> None:
@@ -801,6 +812,81 @@ class SpatialCalculator:
                     t = (geom_dist - g0) / span
                     return p0 + t * (p1 - p0)
         return geom_dist + self.pk_offset
+
+    def has_axis(self) -> bool:
+        """True when a trace was found and chainage can actually be computed.
+
+        ``calculate_pk`` answers 0.0 without one, which reads like a real
+        chainage. Callers that can warn the operator should ask this first.
+        """
+        return self._axis_metric is not None
+
+    #: Median self-location error above which the chainage is not trustworthy.
+    #: Measured on the real trace KML the job uses: 0.00 m across all 180
+    #: anchors, because interpolation passes through them by construction. The
+    #: client's own survey KML in the same folder — 123 401 LineStrings, whose
+    #: axis is drawing geometry rather than a centreline — gives 18 553 m. Any
+    #: threshold between those separates them; 50 m leaves generous room for a
+    #: KML with duplicated or slightly displaced anchors.
+    CALIBRATION_TOLERANCE_M = 50.0
+
+    def calibration_residual_m(self) -> Optional[float]:
+        """Median error when each PK placemark is asked to locate itself.
+
+        What this actually detects is an axis whose geometry does not run
+        along the anchors. Interpolation passes through every calibration
+        anchor by construction, so a trace that *does* follow them scores ~0
+        whatever their labels claim; but when the axis is somewhere else the
+        anchors project onto it badly — in the real case they all collapsed
+        onto one end and came back as PK 0.
+
+        That is the failure worth catching: an axis can load and still be the
+        wrong geometry, and then the chainage looks plausible and is wrong,
+        which is worse than no axis at all because nothing says so. Measured:
+        the trace KML scores 0.00 m over 180 anchors, the client's survey KML
+        in the same folder — 123 401 LineStrings, of which the loader takes
+        the first — scores 18 553 m.
+
+        Returns None when there is nothing to judge, including when the axis
+        was synthesised from the very placemarks being checked. Saying "no
+        verdict" is honest; saying "0.00 m" would claim a check that did not
+        happen.
+        """
+        if not self.has_axis() or not self._axis_from_geometry:
+            return None
+        errores: List[float] = []
+        for pt in self.named_points:
+            oficial = self._parse_pk_from_name(pt.name)
+            if oficial is None:
+                continue          # vertederos y demas: no llevan PK
+            errores.append(abs(self.calculate_pk(pt.lat, pt.lon) - oficial))
+        if len(errores) < 2:
+            return None
+        errores.sort()
+        return errores[len(errores) // 2]
+
+    def axis_looks_trustworthy(self) -> bool:
+        """False when the trace cannot even reproduce its own anchors."""
+        residual = self.calibration_residual_m()
+        return residual is None or residual <= self.CALIBRATION_TOLERANCE_M
+
+    def axis_summary(self) -> str:
+        """One line for the diagnostic report and the log."""
+        if not self.has_axis():
+            return "sin traza — todos los PK saldrían a 0"
+        extent = self.axis_pk_extent()
+        anclas = len(self._pk_calibration)
+        residual = self.calibration_residual_m()
+        origen = "geometría propia" if self._axis_from_geometry else "deducida de los PK"
+        partes = [f"traza cargada ({origen}) · {anclas} anclas"]
+        if extent is not None:
+            partes.append(
+                f"PK {self.format_pk_label(extent[0])}–{self.format_pk_label(extent[1])}"
+            )
+        if residual is not None:
+            aviso = "" if residual <= self.CALIBRATION_TOLERANCE_M else " — NO FIABLE"
+            partes.append(f"error sobre sus propias anclas {residual:.2f} m{aviso}")
+        return " · ".join(partes)
 
     def axis_pk_extent(self) -> Optional[Tuple[float, float]]:
         """Official chainage covered by the *trace itself*, as ``(start, end)``.

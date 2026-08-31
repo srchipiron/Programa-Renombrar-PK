@@ -88,6 +88,7 @@ def collect_diagnostics(
     project: Any = None,
     analysis: Optional[Dict[str, Any]] = None,
     coverage: Any = None,
+    spatial: Any = None,
     qt: Optional[Dict[str, str]] = None,
     extra: Optional[Dict[str, str]] = None,
     now: Optional[datetime] = None,
@@ -138,6 +139,13 @@ def collect_diagnostics(
         lines.append(f"- Nombre: {getattr(project, 'name', '?')}")
         lines.append(f"- Ámbito: {_path_state(getattr(project, 'root', ''))}")
         lines.append(f"- Traza: {_path_state(getattr(project, 'kml', ''))}")
+        if spatial is not None:
+            # Whether the trace actually loaded, not just whether the file is
+            # readable: a KML with no LineString answers 0 to every PK.
+            try:
+                lines.append(f"- Estado de la traza: {spatial.axis_summary()}")
+            except Exception as exc:  # pragma: no cover - defensivo
+                lines.append(f"- Estado de la traza: no se pudo determinar ({exc})")
         for kml in getattr(project, "landmark_kmls", []) or []:
             lines.append(f"- Vertederos: {_path_state(kml)}")
         lines.append(f"- Umbral: {getattr(project, 'threshold', '?')} m · Sufijo: {getattr(project, 'suffix', '')!r}")
