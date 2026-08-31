@@ -193,17 +193,34 @@ class TestThumbnailPublicExifApi(unittest.TestCase):
     types and returns an empty Exif object (falsy) when no EXIF is present.
     """
 
-    def test_thumbnail_uses_public_getexif_api(self) -> None:
-        """Verify the source code no longer *calls* _getexif (comments are ok)."""
-        import inspect, re
-        from src import map_component as mc
-        source = inspect.getsource(mc.MapManager._get_base64_thumbnail)
-        # Match the actual call: img._getexif() — not the substring in comments.
-        calls = re.findall(r'\bimg\._getexif\s*\(', source)
-        self.assertEqual(calls, [],
-                         "Found a live call to img._getexif() — must use img.getexif() instead")
-        self.assertIn("getexif", source,
-                      "Must call img.getexif() for orientation correction")
+    def test_no_source_file_calls_the_private_getexif(self) -> None:
+        """Repo-wide: the private API must not come back anywhere.
+
+        This started as a check on one method. Widening it was the lesson of
+        the bug: the map was fixed and the preview pane was not, because each
+        kept its own copy of the orientation code, so the pane silently
+        stopped rotating PNG and TIFF. Both call core.images now, and this
+        guards every file rather than the one that happened to be noticed.
+        """
+        import re
+        from pathlib import Path
+
+        raiz = Path(__file__).resolve().parent.parent / "src"
+        culpables = [
+            f"{p.relative_to(raiz)}:{i}"
+            for p in raiz.rglob("*.py")
+            for i, linea in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+            # La llamada, no la mencion en un comentario.
+            if re.search(r"\w\._getexif\s*\(", linea)
+        ]
+        self.assertEqual(culpables, [], f"Llamada al _getexif privado en: {culpables}")
+
+    def test_orientation_is_applied_in_one_place(self) -> None:
+        import inspect
+
+        from src.core import images
+
+        self.assertIn("getexif", inspect.getsource(images._apply_orientation))
 
     def test_thumbnail_on_png_without_exif_does_not_crash(self) -> None:
         """PNG images have no _getexif; the public API must handle them gracefully."""

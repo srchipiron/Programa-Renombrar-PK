@@ -8,10 +8,9 @@ from collections import OrderedDict
 from typing import List, Optional
 
 import piexif
-from PIL import Image, ExifTags
+from PIL import Image
 from PySide6.QtCore import (
     QAbstractTableModel,
-    QItemSelection,
     QModelIndex,
     QObject,
     QSortFilterProxyModel,
@@ -20,7 +19,7 @@ from PySide6.QtCore import (
     Signal,
     Slot,
 )
-from PySide6.QtGui import QAction, QColor, QDesktopServices, QImage, QPixmap
+from PySide6.QtGui import QColor, QDesktopServices, QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -38,6 +37,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..core.images import load_thumbnail
 from ..core.models import PhotoItem
 
 _COLUMNS = [
@@ -206,9 +206,13 @@ class PreviewTableModel(QAbstractTableModel):
         return changed
 
 
-#: Decoded previews kept in memory. A 360 px RGB pixmap is ~0.4 MB, so this
-#: is a few tens of MB at most - cheap next to re-decoding a 14 MB JPEG, which
+#: Decoded previews kept in memory. A 360 px RGB image is ~0.4 MB, so this is
+#: a few tens of MB at most - cheap next to re-decoding a 14 MB JPEG, which
 #: measured 107 ms per photo on a real delivery.
+#:
+#: They are ``QImage``, not ``QPixmap``: the decoding happens in a worker
+#: thread and Qt only allows QPixmap on the GUI thread. The conversion is done
+#: by the slot that paints it.
 _THUMB_CACHE_SIZE = 64
 
 #: Head of the JPEG read to find the embedded preview. The EXIF APP1 marker is
@@ -222,21 +226,21 @@ class _ThumbnailCache:
 
     def __init__(self, capacity: int = _THUMB_CACHE_SIZE) -> None:
         self._capacity = capacity
-        self._items: "OrderedDict[tuple, QPixmap]" = OrderedDict()
+        self._items: "OrderedDict[tuple, QImage]" = OrderedDict()
         self._lock = threading.Lock()
 
-    def get(self, key) -> Optional[QPixmap]:
+    def get(self, key) -> Optional[QImage]:
         with self._lock:
-            pixmap = self._items.get(key)
-            if pixmap is not None:
+            image = self._items.get(key)
+            if image is not None:
                 self._items.move_to_end(key)
-            return pixmap
+            return image
 
-    def put(self, key, pixmap: Optional[QPixmap]) -> None:
-        if pixmap is None:
+    def put(self, key, image: Optional[QImage]) -> None:
+        if image is None:
             return
         with self._lock:
-            self._items[key] = pixmap
+            self._items[key] = image
             self._items.move_to_end(key)
             while len(self._items) > self._capacity:
                 self._items.popitem(last=False)
@@ -267,7 +271,6 @@ class _ThumbnailLoader(QObject):
         self._pending_path: Optional[str] = None
         self._pending_size: int = 360
         self._worker_thread: Optional[threading.Thread] = None
-        self._running = True
         self._cache = _ThumbnailCache()
 
     def load(self, path: str, max_size: int) -> None:
@@ -283,30 +286,36 @@ class _ThumbnailLoader(QObject):
                 self._worker_thread.start()
 
     def _run(self) -> None:
-        while self._running:
+        while True:
             with self._lock:
                 path = self._pending_path
                 size = self._pending_size
                 self._pending_path = None
-            if not path:
-                break
+                if not path:
+                    # Releasing the thread must be decided *under the lock*:
+                    # otherwise a load() landing between "no work left" and the
+                    # thread actually dying sees is_alive() and starts nothing,
+                    # and that request is silently dropped -- the pane keeps
+                    # showing the previous photo.
+                    self._worker_thread = None
+                    return
 
             # Something on screen immediately, even if it is the low-res one.
             quick = _read_embedded_thumbnail(path, size)
             if quick is not None and self._still_wanted(path):
                 self.ready.emit(path, quick)
 
-            pixmap = _read_thumbnail(path, size)
-            self._cache.put((path, size), pixmap)
+            image = _read_thumbnail(path, size)
+            self._cache.put((path, size), image)
             if self._still_wanted(path):
-                self.ready.emit(path, pixmap)
+                self.ready.emit(path, image)
 
     def _still_wanted(self, path: str) -> bool:
         with self._lock:
             return self._pending_path is None or self._pending_path == path
 
 
-def _read_embedded_thumbnail(path: str, max_size: int) -> Optional[QPixmap]:
+def _read_embedded_thumbnail(path: str, max_size: int) -> Optional[QImage]:
     """Return the preview the camera embedded in the file, if there is one.
 
     Cheap twice over: only the EXIF segment is parsed (no pixel decode of the
@@ -336,40 +345,22 @@ def _read_embedded_thumbnail(path: str, max_size: int) -> Optional[QPixmap]:
             img.thumbnail((max_size, max_size))
             data = img.tobytes("raw", "RGB")
             qimg = QImage(data, img.width, img.height, img.width * 3, QImage.Format_RGB888)
-            return QPixmap.fromImage(qimg.copy())
+            # QImage, not QPixmap: this runs in a worker thread.
+            return qimg.copy()
     except Exception:
         return None
 
 
 
-def _read_thumbnail(path: str, max_size: int) -> Optional[QPixmap]:
-    try:
-        with Image.open(path) as img:
-            img.draft("RGB", (max_size, max_size))
-            try:
-                orientation_key = None
-                for k, v in ExifTags.TAGS.items():
-                    if v == "Orientation":
-                        orientation_key = k
-                        break
-                exif = img._getexif() if hasattr(img, "_getexif") else None
-                if exif and orientation_key in exif:
-                    orient = exif[orientation_key]
-                    if orient == 3:
-                        img = img.rotate(180, expand=True)
-                    elif orient == 6:
-                        img = img.rotate(270, expand=True)
-                    elif orient == 8:
-                        img = img.rotate(90, expand=True)
-            except Exception:
-                pass
-            img = img.convert("RGB")
-            img.thumbnail((max_size, max_size))
-            data = img.tobytes("raw", "RGB")
-            qimg = QImage(data, img.width, img.height, img.width * 3, QImage.Format_RGB888)
-            return QPixmap.fromImage(qimg.copy())
-    except Exception:
+def _read_thumbnail(path: str, max_size: int) -> Optional[QImage]:
+    img = load_thumbnail(path, max_size)
+    if img is None:
         return None
+    data = img.tobytes("raw", "RGB")
+    qimg = QImage(data, img.width, img.height, img.width * 3, QImage.Format_RGB888)
+    # QImage, not QPixmap: this runs in a worker thread, and copy() detaches it
+    # from the `data` buffer, which is freed when this returns.
+    return qimg.copy()
 
 
 class PreviewTab(QWidget):
@@ -651,9 +642,12 @@ class PreviewTab(QWidget):
         self._thumb_loader.load(item.path, 360)
 
     @Slot(str, object)
-    def _apply_thumbnail_data(self, path: str, pixmap) -> None:
+    def _apply_thumbnail_data(self, path: str, image) -> None:
+        # The worker hands over a QImage; QPixmap is built here because Qt only
+        # allows it on the GUI thread.
         if not self._current_item or self._current_item.path != path:
             return
+        pixmap = QPixmap.fromImage(image) if image is not None else None
         if pixmap is None or pixmap.isNull():
             self.thumb_label.setText("No se pudo generar la miniatura.")
             self.thumb_label.setPixmap(QPixmap())

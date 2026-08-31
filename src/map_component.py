@@ -23,9 +23,8 @@ from typing import Any, Dict, List, Sequence
 import sys
 
 import piexif
-from PIL import ExifTags, Image
 
-Image.MAX_IMAGE_PIXELS = None  # Prevent DecompressionBombError for high-res drone images
+from .core.images import load_thumbnail
 
 logger = logging.getLogger(__name__)
 
@@ -133,38 +132,13 @@ class MapManager:
     # ------------------------------------------------------------------
     @staticmethod
     def _get_base64_thumbnail(image_path: str, max_size: int = 300) -> str:
-        try:
-            with Image.open(image_path) as img:
-                img.draft("RGB", (max_size, max_size))
-                try:
-                    orientation_key = None
-                    for k, v in ExifTags.TAGS.items():
-                        if v == "Orientation":
-                            orientation_key = k
-                            break
-                    # Use the public getexif() API (available since Pillow 6.0).
-                    # _getexif() is a private JPEG-only method that doesn't exist
-                    # on PNG/TIFF and was removed from the public surface in newer
-                    # Pillow releases.
-                    exif = img.getexif() if hasattr(img, "getexif") else None
-                    if exif and orientation_key is not None and orientation_key in exif:
-                        orient = exif[orientation_key]
-                        if orient == 3:
-                            img = img.rotate(180, expand=True)
-                        elif orient == 6:
-                            img = img.rotate(270, expand=True)
-                        elif orient == 8:
-                            img = img.rotate(90, expand=True)
-                except Exception:
-                    pass
-                img.thumbnail((max_size, max_size))
-                buffer = io.BytesIO()
-                img.convert("RGB").save(buffer, format="JPEG", quality=80)
-                encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
-                return f"data:image/jpeg;base64,{encoded}"
-        except Exception as exc:
-            logger.debug("Thumbnail failed for %s: %s", image_path, exc)
+        img = load_thumbnail(image_path, max_size)
+        if img is None:
             return ""
+        buffer = io.BytesIO()
+        img.save(buffer, format="JPEG", quality=80)
+        encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
+        return f"data:image/jpeg;base64,{encoded}"
 
     # ------------------------------------------------------------------
     # HTML assembly

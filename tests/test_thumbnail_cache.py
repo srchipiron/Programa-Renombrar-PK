@@ -17,7 +17,7 @@ from PIL import Image
 
 pytest.importorskip("PySide6.QtWidgets")
 
-from PySide6.QtGui import QPixmap  # noqa: E402
+from PySide6.QtGui import QImage, QPixmap  # noqa: E402
 
 from src.ui_qt.preview_tab import (  # noqa: E402
     _EXIF_HEAD_BYTES,
@@ -43,11 +43,14 @@ class EmbeddedThumbnailTests(unittest.TestCase):
         _photo_with_thumbnail(self.photo)
 
     def test_returns_the_camera_preview(self) -> None:
-        pixmap = _read_embedded_thumbnail(str(self.photo), 360)
-        self.assertIsInstance(pixmap, QPixmap)
-        self.assertFalse(pixmap.isNull())
+        imagen = _read_embedded_thumbnail(str(self.photo), 360)
+        # QImage and never QPixmap: this is decoded in a worker thread and Qt
+        # only allows QPixmap on the GUI thread.
+        self.assertIsInstance(imagen, QImage)
+        self.assertNotIsInstance(imagen, QPixmap)
+        self.assertFalse(imagen.isNull())
         # It is the small preview, not the full render.
-        self.assertLessEqual(pixmap.width(), 256)
+        self.assertLessEqual(imagen.width(), 256)
 
     def test_only_the_head_of_the_file_is_needed(self) -> None:
         """The point is not reading 14 MB over SMB to show a placeholder."""
@@ -73,22 +76,22 @@ class EmbeddedThumbnailTests(unittest.TestCase):
 class ThumbnailCacheTests(unittest.TestCase):
     def test_returns_what_was_stored(self) -> None:
         cache = _ThumbnailCache(capacity=4)
-        pixmap = QPixmap(8, 8)
+        pixmap = QImage(8, 8, QImage.Format_RGB888)
         cache.put(("a.jpg", 360), pixmap)
         self.assertIs(cache.get(("a.jpg", 360)), pixmap)
         self.assertIsNone(cache.get(("b.jpg", 360)))
 
     def test_size_is_part_of_the_key(self) -> None:
         cache = _ThumbnailCache()
-        cache.put(("a.jpg", 360), QPixmap(8, 8))
+        cache.put(("a.jpg", 360), QImage(8, 8, QImage.Format_RGB888))
         self.assertIsNone(cache.get(("a.jpg", 720)))
 
     def test_evicts_the_least_recently_used(self) -> None:
         cache = _ThumbnailCache(capacity=2)
         for name in ("a", "b"):
-            cache.put((name, 360), QPixmap(4, 4))
+            cache.put((name, 360), QImage(4, 4, QImage.Format_RGB888))
         cache.get(("a", 360))          # 'a' vuelve a ser el reciente
-        cache.put(("c", 360), QPixmap(4, 4))
+        cache.put(("c", 360), QImage(4, 4, QImage.Format_RGB888))
 
         self.assertIsNone(cache.get(("b", 360)))
         self.assertIsNotNone(cache.get(("a", 360)))
@@ -99,15 +102,54 @@ class ThumbnailCacheTests(unittest.TestCase):
         cache = _ThumbnailCache()
         cache.put(("a.jpg", 360), None)
         self.assertIsNone(cache.get(("a.jpg", 360)))
-        cache.put(("a.jpg", 360), QPixmap(4, 4))
+        cache.put(("a.jpg", 360), QImage(4, 4, QImage.Format_RGB888))
         self.assertIsNotNone(cache.get(("a.jpg", 360)))
 
     def test_clear(self) -> None:
         cache = _ThumbnailCache()
-        cache.put(("a.jpg", 360), QPixmap(4, 4))
+        cache.put(("a.jpg", 360), QImage(4, 4, QImage.Format_RGB888))
         cache.clear()
         self.assertIsNone(cache.get(("a.jpg", 360)))
 
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class LoaderThreadTests(unittest.TestCase):
+    """A request landing while the worker is retiring must not be dropped.
+
+    The worker released the lock, then broke out of its loop. A load() in that
+    window saw is_alive() and started nothing, so the request vanished and the
+    pane kept showing the previous photo.
+    """
+
+    def test_the_worker_releases_itself_under_the_lock(self) -> None:
+        from src.ui_qt.preview_tab import _ThumbnailLoader
+
+        loader = _ThumbnailLoader()
+        loader._worker_thread = object()  # como si estuviera vivo
+
+        loader._run()  # sin trabajo pendiente: debe retirarse
+
+        # Al quedar en None, el siguiente load() arranca hilo en vez de
+        # confiar en uno que esta muriendo.
+        self.assertIsNone(loader._worker_thread)
+
+    def test_a_pending_request_is_served_before_retiring(self) -> None:
+        from unittest.mock import patch
+
+        from src.ui_qt import preview_tab as pt
+
+        loader = pt._ThumbnailLoader()
+        recibidos = []
+        loader.ready.connect(lambda path, img: recibidos.append(path))
+        loader._pending_path = "foto.jpg"
+        loader._pending_size = 360
+
+        with patch.object(pt, "_read_embedded_thumbnail", return_value=None), \
+                patch.object(pt, "_read_thumbnail", return_value=QImage(4, 4, QImage.Format_RGB888)):
+            loader._run()
+
+        self.assertEqual(recibidos, ["foto.jpg"])
+        self.assertIsNone(loader._worker_thread)
