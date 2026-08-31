@@ -8,13 +8,29 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 pytest.importorskip("PySide6.QtWidgets")
 
 from src.ui_qt.map_tab import MapTab  # noqa: E402
+
+
+@contextmanager
+def _sin_chromium(tab: MapTab):
+    """Run render_points without instantiating a real QWebEngineView.
+
+    What is under test here is the temp-file lifecycle, not Chromium. And a
+    QWebEngineView built in a test is never destroyed while an event loop is
+    running, so it survives to interpreter shutdown and takes the process
+    down with it (0xC0000005 / signal 11) *after* every test has passed --
+    a green suite reporting exit code 139.
+    """
+    with patch.object(MapTab, "_ensure_view", return_value=MagicMock()):
+        yield tab
 
 
 class TempFileTests(unittest.TestCase):
@@ -66,7 +82,8 @@ class RenderTests(unittest.TestCase):
         self.traza = [[37.80, -0.96], [37.81, -0.95]]
 
     def test_writes_a_readable_html(self) -> None:
-        self.tab.render_points(self.puntos, self.traza, [], 13.8)
+        with _sin_chromium(self.tab):
+            self.tab.render_points(self.puntos, self.traza, [], 13.8)
 
         self.assertIsNotNone(self.tab._last_html_path)
         escrito = Path(self.tab._last_html_path)
@@ -77,9 +94,10 @@ class RenderTests(unittest.TestCase):
     def test_repeated_renders_leave_a_single_file(self) -> None:
         """Four renders used to leave four files of megabytes each."""
         vistos = []
-        for _ in range(4):
-            self.tab.render_points(self.puntos, self.traza, [], 13.8)
-            vistos.append(Path(self.tab._last_html_path))
+        with _sin_chromium(self.tab):
+            for _ in range(4):
+                self.tab.render_points(self.puntos, self.traza, [], 13.8)
+                vistos.append(Path(self.tab._last_html_path))
 
         self.assertEqual(len({str(p) for p in vistos}), 4)   # uno nuevo cada vez
         vivos = [p for p in vistos if p.exists()]

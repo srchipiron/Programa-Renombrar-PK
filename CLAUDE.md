@@ -59,6 +59,14 @@ Los workers construyen **sus propias instancias** de `SpatialCalculator` y
   en cualquier sumidero (ADR-010).
 - **Las distancias son bimodales** en trabajos reales: corredor + un puñado a
   kilómetros. El umbral corta en el salto, no en un percentil (ADR-013).
+- **Un `.bat` con finales de línea LF no se ejecuta**: `cmd.exe` recorre el
+  fichero por desplazamiento de bytes contando CRLF, y sin ellos se come los
+  primeros caracteres de cada línea (`setlocal` → `ocal`). `.gitattributes` lo
+  fuerza; no lo quites ni normalices los `.bat` a LF.
+- **Mira el código de salida de pytest, no sólo el resumen**: un
+  `QWebEngineView` creado en un test sobrevive hasta el cierre del intérprete y
+  Chromium tira el proceso *después* de que todo pase en verde. Salía 139 con
+  «458 passed». Por eso los tests del mapa no instancian Chromium.
 - **Los tests corren con el Python del sistema**, no con `venv\`. Hoy coinciden;
   si divergen, `run_checks.bat` daría verde sobre otro entorno. El CI usa 3.12 y
   el desarrollo va con 3.14.
