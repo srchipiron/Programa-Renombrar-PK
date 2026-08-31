@@ -1711,6 +1711,9 @@ class MainWindow(QMainWindow):
         self._worker_ctl.cancel()
         self._autosave_timer.stop()
         self._preview_debounce_timer.stop()
+        # The last render's temp HTML has no next render to clean it up, and
+        # with the embedded thumbnails it weighs megabytes.
+        self.map_tab._discard_previous_html()
         try:
             self._persist_state()
             self._save_session()

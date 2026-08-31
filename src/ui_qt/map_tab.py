@@ -5,6 +5,7 @@ import logging
 import os
 import tempfile
 import webbrowser
+from pathlib import Path
 from typing import List, Optional
 
 from PySide6.QtCore import Qt, QUrl, Signal, Slot
@@ -141,6 +142,10 @@ class MapTab(QWidget):
             self.open_browser_btn.setEnabled(False)
             return
 
+        # Each render used to leave its file behind for good: six orphans of
+        # the old size were sitting in %TEMP%, and with the embedded
+        # thumbnails each one is now megabytes.
+        self._discard_previous_html()
         fd, path = tempfile.mkstemp(suffix=".html", prefix="visor_pks_")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -175,11 +180,24 @@ class MapTab(QWidget):
                 "'Abrir en navegador'."
             )
 
+    def _discard_previous_html(self) -> None:
+        """Remove the temp file of the previous render, if any."""
+        previous = self._last_html_path
+        self._last_html_path = None
+        if not previous:
+            return
+        try:
+            os.remove(previous)
+        except OSError as exc:
+            logger.debug("No se pudo borrar el mapa temporal %s: %s", previous, exc)
+
     @Slot()
     def _open_in_browser(self) -> None:
         if not self._last_html_path:
             return
-        webbrowser.open(f"file:///{self._last_html_path}")
+        # as_uri() percent-encodes: a user profile with a space in it produced
+        # a malformed file:/// URL when built by hand.
+        webbrowser.open(Path(self._last_html_path).as_uri())
 
     def focus_photo(self, photo_name_or_path: str) -> None:
         """Centra y abre el popup del marcador correspondiente a una foto."""
