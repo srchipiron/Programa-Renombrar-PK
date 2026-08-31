@@ -26,9 +26,9 @@ class TestConfigManager(unittest.TestCase):
         """Test default configuration values."""
         config = self.config_manager.config
         
-        self.assertEqual(config.threshold, 250.0)
+        self.assertEqual(config.threshold, 30.0)
         self.assertEqual(config.max_workers, 4)
-        self.assertFalse(config.create_backup)
+        self.assertTrue(config.create_backup)
         self.assertEqual(config.last_suffix, "[PK]-DEFAULT")
     
     def test_update_config(self):
@@ -68,7 +68,7 @@ class TestConfigManager(unittest.TestCase):
         """Test individual setting get/set."""
         # Test getting
         threshold = self.config_manager.get_setting('threshold')
-        self.assertEqual(threshold, 250.0)
+        self.assertEqual(threshold, 30.0)
         
         # Test setting
         self.config_manager.set_setting('threshold', 400.0)
@@ -77,6 +77,30 @@ class TestConfigManager(unittest.TestCase):
         # Test unknown setting
         with self.assertRaises(ValueError):
             self.config_manager.set_setting('unknown_setting', 'value')
+
+    def test_auto_refresh_preview_default(self) -> None:
+        self.assertTrue(self.config_manager.config.auto_refresh_preview)
+
+    def test_update_config_ignores_unknown_keys(self):
+        """UI layer may send richer payloads; unknown keys must not crash."""
+        self.config_manager.update_config(
+            threshold=275.0,
+            folder="/tmp/ignored",
+            kml_file="/tmp/ignored.kml",
+            suffix="ui-only",
+        )
+        self.assertEqual(self.config_manager.config.threshold, 275.0)
+        self.assertEqual(self.config_manager.config.last_suffix, "[PK]-DEFAULT")
+
+    def test_extra_landmarks_persist(self) -> None:
+        landmarks = [
+            {"name": "Caliche", "lat": 37.8167, "lon": -0.9675},
+            {"name": "bad", "lat": "x", "lon": 1},  # discarded
+        ]
+        self.config_manager.update_config(extra_landmarks=landmarks)
+        new_manager = ConfigManager(str(self.config_file))
+        self.assertEqual(len(new_manager.config.extra_landmarks), 1)
+        self.assertEqual(new_manager.config.extra_landmarks[0]["name"], "Caliche")
 
 if __name__ == '__main__':
     unittest.main()

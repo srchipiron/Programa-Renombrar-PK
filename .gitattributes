@@ -1,0 +1,32 @@
+# Windows batch files must be checked out with CRLF endings.
+#
+# cmd.exe walks a .bat by byte offset and assumes CRLF: with LF-only endings
+# the position drifts and it starts eating the first characters of each line.
+# Measured on scripts/run_checks.bat — "setlocal" reached cmd as "ocal",
+# "if errorlevel" as "rrorlevel", and the documented QA entry point did not
+# run at all. The same file with CRLF runs fine.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Everything else: normalise in the repository, let git pick the working-copy
+# ending. Marked explicitly so the answer does not depend on each machine's
+# core.autocrlf.
+* text=auto
+*.py text
+*.md text
+*.json text
+*.html text
+*.css text
+*.js text
+*.iss text eol=crlf
+
+# Binary: never touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.zip binary
+*.kmz binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
