@@ -257,6 +257,36 @@ python -m pytest tests/ --cov=src --cov-report=html
 
 ## 📝 Registro de Cambios
 
+### v3.9.2 - El KML equivocado deja de pasar desapercibido
+- 🚨 **Aviso si la traza no es de fiar.** Elegir el KML que no lleva traza hacía que
+  *todos* los PK salieran a 0 sin que nada lo dijera; y peor, un KML cuya traza no
+  recorre las anclas (el levantamiento del cliente, con 123 401 `LineString`, del que
+  se toma el primero) da cifras con pinta de PK que no lo son. Ahora se le pregunta a
+  cada ancla por su propio PK: **0,00 m** en el KML de traza real, **18 553 m** en el
+  otro. Se avisa al operador y consta en el diagnóstico
+- 🤐 Cuando el eje se **deduce** de las propias anclas, el chequeo pasa por ellas por
+  construcción: en ese caso dice «sin juicio» en vez de un 0,00 m que no verifica nada
+- 🪟 **Nombres de vertedero del KML contra el sistema de ficheros de Windows.** `TP:01`
+  hacía que `os.makedirs` lanzara `WinError 267` **fuera** del `try` de cada foto, y se
+  llevaba por delante el lote entero. Se sanean los segmentos de carpeta con la misma
+  regla que los nombres de fichero (ADR-010), se quitan espacios y puntos finales que
+  Windows elimina en silencio, y se escapan los nombres reservados (`NUL`, `CON`…)
+- 🔡 **Renombrar `.JPG` a `.jpg` se omitía como si fuera una colisión.** Windows no
+  distingue mayúsculas, así que el destino «ya existía»: era el propio fichero. La
+  comparación pasa a ser por identidad de fichero, en el renombrado y en el diálogo de
+  confirmación de F7
+- 🧱 Una carpeta imposible cuesta **una foto**, no la entrega: `makedirs` va dentro del
+  `try` de cada trabajo, y el andamiaje de `VERTEDEROS/` no aborta por una subcarpeta
+- 🩹 **`scripts\run_checks.bat` no llegaba a ejecutarse**: estaba guardado con finales
+  de línea LF y `cmd.exe` se comía los primeros caracteres de cada línea (`setlocal`
+  llegaba como `ocal`). Convertidos a CRLF los cuatro `.bat` afectados —incluido
+  `ejecutar.bat`— y añadido `.gitattributes` para que un clon nuevo no lo repita
+- 💥 **La suite salía con código 139 pese a los 458 en verde**: un `QWebEngineView`
+  creado en un test no se destruye nunca dentro de un bucle de eventos, y Chromium se
+  llevaba el proceso al cerrar. Ese test ya no instancia Chromium: lo que comprueba es
+  el ciclo del fichero temporal, no el navegador. `run_checks.bat` pasa entero
+- 🧪 458 tests (antes 424) · verificado sobre 23 KML y 9 076 fotos reales
+
 ### v3.9.1 - Repaso de código: hilos, temporales y un solo lector de miniaturas
 - 🧵 **`QPixmap` se creaba en el hilo de trabajo**, que Qt prohíbe: los lectores de
   miniaturas devuelven `QImage` y la conversión ocurre en el slot de la interfaz
