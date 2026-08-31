@@ -218,6 +218,12 @@ def safe_join_under(base_folder: str, *parts: str) -> Optional[str]:
                 return None
             if os.path.isabs(segment) or (len(segment) >= 2 and segment[1] == ":"):
                 return None
+            # The traversal guards above are not enough: these names come from
+            # the client's KML, and a colon anywhere but position 1 sailed
+            # through and made os.makedirs raise.
+            segment = _sanitize_filename_fragment(segment)
+            if not segment or segment in (".", ".."):
+                return None
             cleaned.append(segment)
     if not cleaned:
         return None
@@ -507,6 +513,22 @@ def _safe_unlink(path: str) -> None:
         pass
 
 
+def names_same_file(a: str, b: str) -> bool:
+    """True when both strings name the same file on *this* filesystem.
+
+    Windows is case-insensitive, so ``foto.JPG`` and ``foto.jpg`` are one
+    file: comparing the strings made a rename that only normalises the
+    extension look like a collision with itself. ``normcase`` is a no-op on
+    POSIX, where those really are two files, so this stays correct on the
+    Linux CI as well.
+    """
+    if a == b:
+        return True
+    if not a or not b:
+        return False
+    return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
 def _try_rename(src: str, dst: str) -> bool:
     """Rename ``src`` → ``dst`` when safe; return False on collision/OS error."""
     try:
@@ -514,7 +536,9 @@ def _try_rename(src: str, dst: str) -> bool:
             return True
         if not os.path.exists(src):
             return False
-        if os.path.exists(dst):
+        # exists(dst) is true for a case-only rename on Windows, where dst *is*
+        # src. That is not a collision, and os.rename does the right thing.
+        if os.path.exists(dst) and not names_same_file(src, dst):
             return False
         os.rename(src, dst)
         return True
@@ -736,11 +760,32 @@ def _normalize_template(template: str) -> str:
     return out
 
 
+#: Names Windows reserves for devices. A folder called ``NUL`` reports success
+#: from makedirs and creates nothing, so the rename that follows fails on a
+#: path that does not exist.
+_WINDOWS_RESERVED = frozenset(
+    ["CON", "PRN", "AUX", "NUL"]
+    + [f"COM{i}" for i in range(1, 10)]
+    + [f"LPT{i}" for i in range(1, 10)]
+)
+
+
 def _sanitize_filename_fragment(text: str) -> str:
-    """Strip filesystem-hostile characters while keeping unicode letters."""
+    """Strip filesystem-hostile characters while keeping unicode letters.
+
+    Applies to folder segments as well as file names: landmark folders are
+    named by the client's KML (ADR-010), and ``VERTEDEROS/TP:01`` made
+    ``os.makedirs`` raise WinError 267 — measured, and it took the whole
+    batch down with it, not just that photo.
+    """
     text = text.strip()
     text = re.sub(r"[\\/:*?\"<>|\0\r\n\t]+", "_", text)
     text = re.sub(r"_{2,}", "_", text)
+    # Windows drops trailing dots and spaces silently, so the path we hold
+    # stops matching the one on disk. Drop them ourselves, visibly.
+    text = text.rstrip(" .")
+    if text.split(".")[0].upper() in _WINDOWS_RESERVED:
+        text = f"_{text}"
     return text[:120]
 
 
@@ -1254,7 +1299,13 @@ class RenamerLogic:
                     folder,
                 )
                 continue
-            os.makedirs(path, exist_ok=True)
+            try:
+                os.makedirs(path, exist_ok=True)
+            except OSError as exc:
+                # Scaffolding one landmark must not abort the whole rename
+                # before a single photo has been touched.
+                logger.warning("No se pudo crear la carpeta %r: %s", path, exc)
+                continue
             created.append(path)
 
         return created
@@ -1450,7 +1501,6 @@ class RenamerLogic:
             orig_path = item.path
             orig_name = item.name
             target_dir = self.resolve_output_dir(item, base_folder)
-            os.makedirs(target_dir, exist_ok=True)
             new_path = os.path.join(target_dir, new_name)
             new_stem = os.path.splitext(new_name)[0]
             orig_rel = relative_mapping_key(orig_path, base_folder)
@@ -1463,9 +1513,15 @@ class RenamerLogic:
             }
 
             try:
+                # Inside the try: a folder this photo cannot have must cost one
+                # photo, not the batch. It used to sit above and its OSError
+                # escaped process_images entirely.
+                os.makedirs(target_dir, exist_ok=True)
                 # Collision check before backup so a skipped job does not
-                # leave a misleading backup copy.
-                if orig_path != new_path and os.path.exists(new_path):
+                # leave a misleading backup copy. names_same_file, not !=:
+                # on Windows a .JPG → .jpg rename collided with itself and the
+                # photo was skipped with a "destino ya existe" that was false.
+                if not names_same_file(orig_path, new_path) and os.path.exists(new_path):
                     return {
                         **base_fields,
                         "status": "skipped",
@@ -1483,7 +1539,7 @@ class RenamerLogic:
                         continue
                     sc_ext = os.path.splitext(sc_path)[1]
                     sc_new = os.path.join(target_dir, new_stem + sc_ext)
-                    if sc_path == sc_new:
+                    if names_same_file(sc_path, sc_new):
                         sidecar_static.append(sc_path)
                         continue
                     if os.path.exists(sc_new):
@@ -1772,7 +1828,9 @@ class RenamerLogic:
                 unchanged += 1
 
             job_conflict = False
-            if orig_path != new_path and os.path.exists(new_path):
+            # Same comparison as process_images, on purpose: this dialog is
+            # only useful if it predicts what the rename will really do.
+            if not names_same_file(orig_path, new_path) and os.path.exists(new_path):
                 photo_conflicts += 1
                 job_conflict = True
             else:
@@ -1781,7 +1839,7 @@ class RenamerLogic:
                         continue
                     sc_ext = os.path.splitext(sc_path)[1]
                     sc_new = os.path.join(target_dir, new_stem + sc_ext)
-                    if sc_path == sc_new:
+                    if names_same_file(sc_path, sc_new):
                         continue
                     if os.path.exists(sc_new):
                         sidecar_conflicts += 1
