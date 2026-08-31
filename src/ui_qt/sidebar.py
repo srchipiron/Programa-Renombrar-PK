@@ -240,7 +240,10 @@ class Sidebar(QWidget):
             "Plantilla. Si incluye tokens se usa tal cual; si no, se añade "
             "al PK como sufijo.\nTokens: {pk}, {pk_raw}, {km}, {m}, {view}, {original}, "
             "{date}, {time}, {camera}, {alt}, {dist}, {sequence:02d}, {suffix}.\n"
-            "Ejemplo: {pk}_{date}_{sequence:02d}"
+            "Ejemplo: {pk}_{date}_{sequence:02d}\n\n"
+            "Mes de la entrega: {MES} y {AA} se resuelven con la carpeta, así "
+            "que [PK]-{MES}{AA} sobre 2026/8.Agosto da [PK]-AGO26 y no hay que "
+            "cambiarlo cada mes."
         )
         suffix_row.addWidget(self.suffix_edit)
 

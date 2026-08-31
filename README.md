@@ -256,7 +256,12 @@ python -m pytest tests/ --cov=src --cov-report=html
 
 ## 📝 Registro de Cambios
 
-### v3.8 - Versión visible y diagnóstico enviable
+### v3.8 - Versión visible, diagnóstico enviable y sufijo del mes automático
+- 📅 **El sufijo deja de caducar**: `[PK]-{MES}{AA}` se resuelve con la carpeta de la
+  entrega (`2026/8.Agosto` → `[PK]-AGO26`). La obra guarda una plantilla que sirve todos
+  los meses en vez de un literal que hay que cambiar — y que se olvida: en Pulpí-Vera la
+  carpeta `5.Mayo` contiene ficheros `ABR26`. Un sufijo literal sigue funcionando igual,
+  y un token que no se puede resolver se deja **visible** en vez de inventarse un mes
 - 🔖 **Versión única** en `src/core/version.py`: sale en el título de la ventana, en la
   Ayuda, en el log de arranque y en el instalador (antes solo existía un `2026.1.0`
   suelto dentro de `installer.iss`, que podía discrepar del build)

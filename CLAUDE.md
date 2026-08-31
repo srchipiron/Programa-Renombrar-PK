@@ -41,6 +41,8 @@ Los workers construyen **sus propias instancias** de `SpatialCalculator` y
 - **Viaducto** — PK listados en la obra; van a `VIADUCTOS/`.
 - **Obra (proyecto)** — un corredor con su traza, vertederos, viaductos, umbral y
   sufijo. Un JSON por obra en `proyectos/` (ADR-011).
+- **Sufijo** — texto añadido al nombre, lleva el mes (`[PK]-AGO26`). Con
+  `[PK]-{MES}{AA}` se resuelve desde la carpeta y deja de caducar (`core/naming.py`).
 - **Vista** — `TI`/`CEN`/`TD`/`TRAZA`, deducida del gimbal DJI y del rumbo del eje.
 
 ## Trampas verificadas

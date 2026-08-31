@@ -34,6 +34,7 @@ from ..core.diagnostics import (
 )
 from ..core.geojson_export import export_analysis_geojson
 from ..core.models import PhotoItem
+from ..core.naming import resolve_suffix
 from ..core.paths import data_dir
 from ..core.projects import (
     Project,
@@ -575,6 +576,20 @@ class MainWindow(QMainWindow):
             return None
         return None if project.contains(folder) else project
 
+    def _effective_suffix(self, cfg) -> str:
+        """Resolve month/year tokens in the suffix against the job folder.
+
+        The suffix carries the month of the delivery, so a stored literal is
+        stale the moment the next month starts — the Pulpí-Vera tree has files
+        named ``…-ABR26`` sitting in ``2026/5.Mayo``. Writing ``[PK]-{MES}{AA}``
+        makes the obra's suffix survive every month. A literal suffix is
+        returned untouched.
+        """
+        resolved = resolve_suffix(cfg.suffix, cfg.folder or "")
+        if resolved != cfg.suffix:
+            logger.debug("Sufijo resuelto: %r -> %r", cfg.suffix, resolved)
+        return resolved
+
     def _apply_threshold_value(self, value: float) -> None:
         """Set the sidebar threshold without re-entering the preview debounce loop."""
         spin = self.sidebar.threshold_spin
@@ -670,7 +685,7 @@ class MainWindow(QMainWindow):
         self.renamer.build_preview_names(
             items,
             cfg.threshold,
-            cfg.suffix,
+            self._effective_suffix(cfg),
             landmark_threshold=self.config_manager.config.landmark_threshold,
         )
         self.renamer.assign_destination_folders(items, cfg.folder or "")
@@ -827,7 +842,7 @@ class MainWindow(QMainWindow):
         self.renamer.build_preview_names(
             self._analysis_items,
             cfg.threshold,
-            cfg.suffix,
+            self._effective_suffix(cfg),
             landmark_threshold=self.config_manager.config.landmark_threshold,
         )
 
