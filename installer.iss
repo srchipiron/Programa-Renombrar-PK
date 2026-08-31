@@ -8,7 +8,10 @@
 ; Requires Inno Setup 6+.  Download from https://jrsoftware.org/isinfo.php
 
 #define AppName         "Renombrador PKS 2026"
-#define AppVersion      "2026.1.0"
+#ifndef AppVersion
+  ; build.bat la inyecta desde src/core/version.py con /DAppVersion=...
+  #define AppVersion    "3.8.0"
+#endif
 #define AppPublisher    "AEROSCAN"
 #define AppExeName      "RenombradorPKS.exe"
 #define AppInternalName "RenombradorPKS"

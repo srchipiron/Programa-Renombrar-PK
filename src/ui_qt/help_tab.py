@@ -5,6 +5,8 @@ from typing import Optional
 
 from PySide6.QtWidgets import QTextBrowser, QVBoxLayout, QWidget
 
+from ..core.version import version_line
+
 _HELP_HTML = """
 <style>
 body { font-family: 'Segoe UI', Inter, sans-serif; padding: 8px 14px; }
@@ -17,7 +19,7 @@ kbd {
 }
 li { margin-bottom: 4px; }
 </style>
-<h2>Renombrador PKS 2026</h2>
+<h2>{titulo}</h2>
 <p>Herramienta para renombrar fotografías aéreas a partir de un archivo KML/KMZ/GeoJSON con la traza y los puntos kilométricos del proyecto.</p>
 
 <h3>Flujo recomendado</h3>
@@ -80,5 +82,7 @@ class HelpTab(QWidget):
 
         self.browser = QTextBrowser()
         self.browser.setOpenExternalLinks(True)
-        self.browser.setHtml(_HELP_HTML)
+        # La version viaja en la ayuda: una captura de pantalla basta para
+        # saber que build esta ejecutando el operador.
+        self.browser.setHtml(_HELP_HTML.replace("{titulo}", version_line()))
         layout.addWidget(self.browser)

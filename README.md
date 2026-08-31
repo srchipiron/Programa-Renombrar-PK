@@ -256,6 +256,17 @@ python -m pytest tests/ --cov=src --cov-report=html
 
 ## 📝 Registro de Cambios
 
+### v3.8 - Versión visible y diagnóstico enviable
+- 🔖 **Versión única** en `src/core/version.py`: sale en el título de la ventana, en la
+  Ayuda, en el log de arranque y en el instalador (antes solo existía un `2026.1.0`
+  suelto dentro de `installer.iss`, que podía discrepar del build)
+- 🩺 **Generar diagnóstico** (`Ctrl+Shift+D`, menú Ayuda): un único fichero con versión,
+  si corre empaquetado o desde código, Python/Qt, rutas y **si cada una es accesible**,
+  versiones de dependencias, obra activa, configuración, estado del análisis, cobertura
+  y las últimas líneas del registro. Funciona aunque no haya análisis o la traza no
+  responda — un diagnóstico que solo sirve con la app sana no sirve
+- 🧪 370 tests (antes 360)
+
 ### v3.7 - Umbral automático por salto de distancias
 - 🎯 **El umbral se corta en el salto**, no en un percentil. Las entregas de corredor son
   bimodales: fotos sobre la traza y unas pocas en otro sitio. Medido en dos trabajos

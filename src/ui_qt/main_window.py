@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from PySide6.QtCore import Qt, QTimer, Slot, QUrl
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QDialog,
     QDockWidget,
@@ -26,6 +26,12 @@ from PySide6.QtWidgets import (
 
 from ..core.config import ConfigManager
 from ..core.coverage import CoverageReport, compute_coverage
+from ..core.diagnostics import (
+    collect_diagnostics,
+    default_filename,
+    summarise_items,
+    write_diagnostics,
+)
 from ..core.geojson_export import export_analysis_geojson
 from ..core.models import PhotoItem
 from ..core.paths import data_dir
@@ -38,6 +44,7 @@ from ..core.projects import (
 from ..core.rename_report import report_csv_path
 from ..core.renamer_logic import RenamerLogic, photo_work_type_sort_key
 from ..core.spatial_calculator import SpatialCalculator
+from ..core.version import app_title
 from .help_tab import HelpTab
 from .eliding_label import ElidingLabel
 from .log_handler import QtLogHandler
@@ -131,7 +138,7 @@ class MainWindow(QMainWindow):
         self._preview_debounce_timer.timeout.connect(self._debounced_refresh_preview)
         self._tray: Optional[QSystemTrayIcon] = None
 
-        self.setWindowTitle("Renombrador PKS 2026")
+        self.setWindowTitle(app_title())
         self.resize(1400, 900)
         self.setAcceptDrops(True)
 
@@ -236,6 +243,13 @@ class MainWindow(QMainWindow):
 
         help_menu = menubar.addMenu("Ay&uda")
         self._add_action(help_menu, "&Ayuda", "F1", lambda: self.tabs.setCurrentWidget(self.help_tab))
+        help_menu.addSeparator()
+        self._add_action(
+            help_menu,
+            "Generar &diagnóstico…",
+            "Ctrl+Shift+D",
+            self._on_generate_diagnostics,
+        )
 
     def _add_action(self, menu, text: str, shortcut: Optional[str], handler) -> QAction:
         action = QAction(text, self)
@@ -492,6 +506,64 @@ class MainWindow(QMainWindow):
             f"Obra «{snapshot.name}» guardada en:\n{path}\n\n"
             f"Ámbito: {snapshot.root or '(sin raíz)'}"
         )
+
+    @Slot()
+    def _on_generate_diagnostics(self) -> None:
+        """Write everything needed to debug this install into one file.
+
+        Deliberately available even when nothing has been analysed and even
+        when the corridor's trace is unreachable: a diagnostic that only works
+        when the app is healthy is no use.
+        """
+        from PySide6 import __version__ as pyside_version
+        from PySide6.QtCore import qVersion
+
+        proyecto = self._project_store.find(self.config_manager.config.active_project)
+        analisis: Optional[dict] = None
+        if self._analysis_items:
+            analisis = summarise_items(self._analysis_items)
+            analisis["umbral aplicado (m)"] = f"{self.sidebar.get_config().threshold:.1f}"
+            analisis["sufijo"] = self.sidebar.get_config().suffix
+
+        try:
+            informe = collect_diagnostics(
+                config=self.config_manager.config,
+                project=proyecto,
+                analysis=analisis,
+                coverage=self._coverage,
+                qt={"PySide6": pyside_version, "Qt": qVersion()},
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("No se pudo reunir el diagnóstico")
+            self._error(f"No se pudo generar el diagnóstico: {exc}")
+            return
+
+        sugerido = str(data_dir() / default_filename())
+        destino, _ = QFileDialog.getSaveFileName(
+            self, "Guardar diagnóstico", sugerido, "Texto (*.txt);;Todos los archivos (*.*)"
+        )
+        if not destino:
+            return
+        try:
+            escrito = write_diagnostics(destino, informe)
+        except OSError as exc:
+            self._error(f"No se pudo escribir el diagnóstico: {exc}")
+            return
+
+        logger.info("Diagnóstico generado en %s", escrito)
+        self.status_message.setText(f"Diagnóstico guardado en {escrito}.")
+        respuesta = QMessageBox.information(
+            self,
+            "Diagnóstico generado",
+            f"Guardado en:\n{escrito}\n\n"
+            "Incluye versión, rutas, dependencias, obra activa, estado del "
+            "análisis y las últimas líneas del registro.\n\n"
+            "Contiene rutas reales de trabajo: envíalo solo a quien te ayude.",
+            QMessageBox.Open | QMessageBox.Ok,
+            QMessageBox.Ok,
+        )
+        if respuesta == QMessageBox.Open:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(escrito.parent)))
 
     def _folder_outside_active_project(self, folder: str) -> Optional[Project]:
         """Active corridor when ``folder`` does not belong to it, else ``None``."""

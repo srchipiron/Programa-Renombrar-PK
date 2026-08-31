@@ -24,6 +24,7 @@ from PySide6.QtWidgets import QApplication
 from ..core.config import ConfigManager
 from ..core.logging_config import initialize_logging
 from ..core.paths import logs_dir
+from ..core.version import APP_EDITION, APP_NAME, ORGANISATION, __version__, version_line
 from . import theme as theme_module
 from .log_handler import QtLogHandler
 from .main_window import MainWindow
@@ -68,7 +69,9 @@ def main(argv: Optional[list] = None) -> int:
     _set_windows_app_id("AEROSCAN.RenombradorPKS.2026")
     QApplication.setAttribute(Qt.AA_ShareOpenGLContexts, True)
     app = QApplication(argv)
-    app.setApplicationName("Renombrador PKS 2026")
+    app.setApplicationName(f"{APP_NAME} {APP_EDITION}")
+    app.setApplicationVersion(__version__)
+    app.setOrganizationName(ORGANISATION)
 
     app_icon = _resolve_app_icon()
     if not app_icon.isNull():
@@ -88,7 +91,8 @@ def main(argv: Optional[list] = None) -> int:
     window.show()
 
     logging.getLogger(__name__).info(
-        "UI Qt arrancada · tema=%s · carpeta=%s · kml=%s",
+        "%s arrancada · tema=%s · carpeta=%s · kml=%s",
+        version_line(),
         cfg.theme,
         cfg.last_folder or "—",
         cfg.last_kml or "—",

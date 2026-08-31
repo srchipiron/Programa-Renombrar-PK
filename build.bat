@@ -108,8 +108,12 @@ if %ERRORLEVEL%==0 set "ISCC=iscc"
 if not defined ISCC if exist "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" set "ISCC=%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
 if not defined ISCC if exist "%ProgramFiles%\Inno Setup 6\ISCC.exe" set "ISCC=%ProgramFiles%\Inno Setup 6\ISCC.exe"
 
+for /f %%V in ('"%PYTHON_EXE%" -c "import sys; sys.path.insert(0,'.'); from src.core.version import __version__; print(__version__)" 2^>nul') do set "APP_VERSION=%%V"
+if not defined APP_VERSION set "APP_VERSION=0.0.0"
+echo      Version: %APP_VERSION%
+
 if defined ISCC (
-    "%ISCC%" installer.iss
+    "%ISCC%" /DAppVersion=%APP_VERSION% installer.iss
     if !ERRORLEVEL!==0 (
         echo      Instalador listo en dist_installer\
     ) else (
