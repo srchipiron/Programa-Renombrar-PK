@@ -1,9 +1,14 @@
 """Unit tests for the MapManager and HTML generation."""
 from __future__ import annotations
 
+import io
 import json
+import tempfile
 import unittest
 from pathlib import Path
+
+import piexif
+from PIL import Image
 
 from src.map_component import MapManager
 
@@ -222,3 +227,61 @@ class TestThumbnailPublicExifApi(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PopupThumbnailTests(unittest.TestCase):
+    """The popup used to point straight at the original photo.
+
+    Clicking a marker decoded a 10–14 MB JPEG inside a Chromium that runs
+    without the GPU. The camera's own preview is ~14 KB and reads in 28.7 ms
+    per photo over the production share, concurrently.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.photo = Path(self.tmp.name) / "DJI_0001.jpg"
+        buf = io.BytesIO()
+        Image.new("RGB", (256, 144), (10, 120, 30)).save(buf, "JPEG")
+        exif = piexif.dump({"0th": {}, "Exif": {}, "GPS": {}, "1st": {},
+                            "thumbnail": buf.getvalue()})
+        Image.new("RGB", (1200, 900), (30, 60, 90)).save(
+            self.photo, "JPEG", exif=exif, quality=80
+        )
+
+    def _point(self, path: str) -> dict:
+        return {"path": path, "name": "DJI_0001.jpg", "lat": 40.0, "lon": -3.0,
+                "distance": 5.0, "pk": 1000.0, "nearest_name": "PK-1+000"}
+
+    def test_the_payload_carries_the_embedded_preview(self) -> None:
+        html = MapManager.build_map_html([self._point(str(self.photo))], [], 30.0, [])
+        linea = next(l for l in html.splitlines() if l.strip().startswith("var photos = "))
+        datos = json.loads(linea.strip()[len("var photos = "):].rstrip(";"))
+
+        self.assertTrue(datos[0]["thumbnail"].startswith("data:image/jpeg;base64,"))
+        # El original sigue disponible para ampliar.
+        self.assertTrue(datos[0]["img_url"].startswith("file:"))
+
+    def test_a_photo_without_a_preview_still_works(self) -> None:
+        plain = Path(self.tmp.name) / "sin_thumb.jpg"
+        Image.new("RGB", (400, 300)).save(plain, "JPEG")
+        html = MapManager.build_map_html([self._point(str(plain))], [], 30.0, [])
+        linea = next(l for l in html.splitlines() if l.strip().startswith("var photos = "))
+        datos = json.loads(linea.strip()[len("var photos = "):].rstrip(";"))
+        self.assertEqual(datos[0]["thumbnail"], "")
+        self.assertTrue(datos[0]["img_url"])  # cae al original
+
+    def test_a_missing_file_is_not_an_error(self) -> None:
+        html = MapManager.build_map_html(
+            [self._point(str(Path(self.tmp.name) / "no_existe.jpg"))], [], 30.0, []
+        )
+        self.assertIn("var photos = ", html)
+
+    def test_the_template_shows_the_preview_and_zooms_the_original(self) -> None:
+        template = (
+            Path(__file__).resolve().parent.parent
+            / "src" / "assets" / "map_template.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn("var previewSrc = photo.thumbnail || photo.img_url", template)
+        self.assertIn("openFullscreen(&#39;' + esc(fullSrc)", template)
+        self.assertIn("<img src=\"' + esc(previewSrc)", template)

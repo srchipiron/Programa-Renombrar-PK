@@ -286,8 +286,11 @@
           var altBadge = photo.rel_altitude ? '<div class="metric-card"><span class="metric-label">Altitud Relativa</span><span class="metric-value">' + photo.rel_altitude.toFixed(1) + ' m</span></div>' : '';
           var viewBadge = photo.view_label ? '<span style="display:inline-block;padding:2px 6px;border-radius:4px;background:#1e293b;font-size:11px;margin-left:6px;">' + esc(photo.view_label) + '</span>' : '';
 
-          var imgSrc = photo.img_url || photo.thumbnail || '';
-          var imgHtml = imgSrc ? '<div class="popup-image-container" onclick="openFullscreen(&#39;' + esc(imgSrc) + '&#39;)"><img src="' + esc(imgSrc) + '" loading="lazy" alt="Preview"/></div>' : '';
+          // La miniatura embebida (~14 KB) se ve al instante; el original
+          // de 10-14 MB solo se descodifica si se amplia.
+          var previewSrc = photo.thumbnail || photo.img_url || '';
+          var fullSrc = photo.img_url || photo.thumbnail || '';
+          var imgHtml = previewSrc ? '<div class="popup-image-container" onclick="openFullscreen(&#39;' + esc(fullSrc) + '&#39;)"><img src="' + esc(previewSrc) + '" loading="lazy" alt="Preview"/></div>' : '';
 
           var popupHTML = ''
             + '<div class="popup-header"><h4>' + esc(photo.name) + viewBadge + '</h4></div>'

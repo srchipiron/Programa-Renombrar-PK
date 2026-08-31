@@ -257,6 +257,10 @@ python -m pytest tests/ --cov=src --cov-report=html
 ## 📝 Registro de Cambios
 
 ### v3.8 - Versión visible, diagnóstico enviable y sufijo del mes automático
+- 🖼️ **El popup del mapa deja de cargar el original**: mostraba el JPEG de 10-14 MB, que
+  Chromium (sin GPU) tenía que descodificar en cada clic. Ahora enseña la miniatura que
+  la propia cámara embebe (~14 KB) y el original queda detrás del clic de ampliar.
+  Extraerlas en paralelo cuesta **0,5 s** para las 117 fotos reales sobre red (117/117)
 - 📅 **El sufijo deja de caducar**: `[PK]-{MES}{AA}` se resuelve con la carpeta de la
   entrega (`2026/8.Agosto` → `[PK]-AGO26`). La obra guarda una plantilla que sirve todos
   los meses en vez de un literal que hay que cambiar — y que se olvida: en Pulpí-Vera la
