@@ -10,7 +10,7 @@
 #define AppName         "Renombrador PKS 2026"
 #ifndef AppVersion
   ; build.bat la inyecta desde src/core/version.py con /DAppVersion=...
-  #define AppVersion    "3.8.0"
+  #define AppVersion    "3.9.1"
 #endif
 #define AppPublisher    "AEROSCAN"
 #define AppExeName      "RenombradorPKS.exe"

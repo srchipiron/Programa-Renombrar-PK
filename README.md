@@ -257,6 +257,30 @@ python -m pytest tests/ --cov=src --cov-report=html
 
 ## 📝 Registro de Cambios
 
+### v3.9.1 - Repaso de código: hilos, temporales y un solo lector de miniaturas
+- 🧵 **`QPixmap` se creaba en el hilo de trabajo**, que Qt prohíbe: los lectores de
+  miniaturas devuelven `QImage` y la conversión ocurre en el slot de la interfaz
+- 🕳️ **Petición de miniatura perdida**: si una selección caía entre el «ya no hay
+  trabajo» del hilo y su muerte, nadie la atendía y el panel seguía enseñando la foto
+  anterior. La retirada del hilo se decide ahora bajo el cerrojo
+- 🗺️ **El mapa dejaba un HTML temporal por render** (6 huérfanos encontrados, y ahora
+  ~2 MB cada uno con las miniaturas embebidas). Se borra el anterior en cada render y
+  el último al cerrar la aplicación
+- 🖼️ **Un solo lector de miniaturas** (`core/images.py`): el mapa y la vista previa
+  tenían una copia cada uno y ya habían divergido — el mapa usaba la API pública
+  `getexif()` y la vista previa la privada `_getexif()`, sólo para JPEG, así que **los
+  PNG y TIFF nunca se rotaban**. Un test lo vigila ahora en todo `src/`
+- 💣 **Límite de píxeles explícito y finito**: las entregas reales son de 12288×8192
+  (100,7 Mpx), por encima del aviso de Pillow. Funcionaba sólo porque `map_component`
+  anulaba el límite global al importarse; ahora se fija una vez, con motivo escrito, y
+  un fallo de lectura se registra en vez de desaparecer
+- 🔗 `render_points` no tenía **ningún** test: una indentación había metido la creación
+  del temporal dentro del `except`, y los 405 tests pasaban igual
+- 🧹 Bandera `_running` muerta y dos importaciones sin usar
+- 🏷️ La versión de `version.py` se había quedado en 3.8.0 con el README ya en v3.9; un
+  test ata ahora versión, README e instalador
+- 🧪 418 tests (antes 399)
+
 ### v3.9 - Informe de entrega
 - 📄 **`Ctrl+I` genera el informe de la entrega**: un HTML autocontenido con la obra, el
   periodo, el umbral aplicado y de dónde salió, los indicadores, **una barra de cobertura
