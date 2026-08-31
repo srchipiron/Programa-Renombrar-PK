@@ -93,6 +93,12 @@ nota. Léelas por cabecera cuando baste (miniatura embebida, EXIF).
   benchmarks de `scripts/`. Varias "mejoras obvias" de este repo resultaron ser
   lo contrario al medirlas.
 
+## Entregables
+
+`Ctrl+I` genera el informe de entrega (HTML autocontenido, imprimible a PDF) a
+partir de los mismos datos que muestra la vista previa. `Ctrl+E` CSV,
+`Ctrl+Shift+E` GeoJSON, `F8` mapa.
+
 ## Diagnóstico
 
 `Ctrl+Shift+D` genera un informe con versión, rutas y su accesibilidad,

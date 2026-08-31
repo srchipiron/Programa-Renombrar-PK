@@ -15,5 +15,6 @@
 | [011](011-per-corridor-projects.md) | One project per corridor, selected in the app |
 | [012](012-distribution-and-writable-state.md) | Portable-first data directory, one command per delivery form |
 | [013](013-threshold-from-the-distance-gap.md) | Threshold cut at the distance gap, not at a quantile |
+| [014](014-delivery-report.md) | The delivery report is self-contained HTML |
 
 New decisions: add the next numbered file using the template in `.cursor/rules/software-architect.mdc`.

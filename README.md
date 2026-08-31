@@ -10,6 +10,7 @@ Aplicación de escritorio para renombrar fotografías aéreas basándose en su p
 - **Soporte Múltiple Formatos**: JPG, PNG, TIFF, BMP, KML, KMZ, GeoJSON, SRT
 - **Vista Previa Interactiva**: Revisa los cambios antes de aplicarlos
 - **Mapas Interactivos**: Visualización geográfica de los resultados
+- **Informe de entrega**: HTML imprimible con cobertura, huecos e índice (`Ctrl+I`)
 - **Exportación CSV**: Análisis de datos en hojas de cálculo
 
 ### 🛠️ Mejoras Técnicas
@@ -255,6 +256,17 @@ python -m pytest tests/ --cov=src --cov-report=html
 ```
 
 ## 📝 Registro de Cambios
+
+### v3.9 - Informe de entrega
+- 📄 **`Ctrl+I` genera el informe de la entrega**: un HTML autocontenido con la obra, el
+  periodo, el umbral aplicado y de dónde salió, los indicadores, **una barra de cobertura
+  a escala** que sitúa cada hueco, la tabla de huecos, los PK sin fotografía, el reparto
+  por carpeta y el índice completo de la entrega
+- 🖨️ Sin dependencias nuevas: se imprime a PDF desde el navegador (`Ctrl+P`) y tiene
+  estilos de impresión para que los cortes de página caigan bien
+- 📮 **Nada externo**: ni CDN, ni imágenes enlazadas, ni scripts. Un informe que deja de
+  verse al salir del equipo no es un entregable
+- 🧪 399 tests (antes 386) · ADR-014
 
 ### v3.8 - Versión visible, diagnóstico enviable y sufijo del mes automático
 - 🖼️ **El popup del mapa deja de cargar el original**: mostraba el JPEG de 10-14 MB, que

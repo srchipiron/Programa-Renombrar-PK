@@ -26,6 +26,11 @@ from PySide6.QtWidgets import (
 
 from ..core.config import ConfigManager
 from ..core.coverage import CoverageReport, compute_coverage
+from ..core.delivery_report import (
+    build_delivery_report,
+    default_filename as report_filename,
+    write_delivery_report,
+)
 from ..core.diagnostics import (
     collect_diagnostics,
     default_filename,
@@ -128,6 +133,9 @@ class MainWindow(QMainWindow):
         self._analysis_items: List[PhotoItem] = []
         #: Latest corridor coverage QA (set by ``_apply_preview``).
         self._coverage: Optional[CoverageReport] = None
+        #: How the current threshold was arrived at, for the delivery report.
+        #: Empty once the operator edits the spinner by hand.
+        self._threshold_origin: str = ""
         self._undo_history = UndoHistory()
         self._session_store = SessionStore()
         self._autosave_timer = QTimer(self)
@@ -221,6 +229,9 @@ class MainWindow(QMainWindow):
                          self._on_import_video)
         self._add_action(file_menu, "&Exportar CSV", "Ctrl+E", self._export_csv)
         self._add_action(file_menu, "Exportar Geo&JSON…", "Ctrl+Shift+E", self._export_geojson)
+        self._add_action(
+            file_menu, "&Informe de entrega…", "Ctrl+I", self._on_delivery_report
+        )
         file_menu.addSeparator()
         self._add_action(file_menu, "&Salir", "Ctrl+Q", self.close)
 
@@ -566,6 +577,77 @@ class MainWindow(QMainWindow):
         if respuesta == QMessageBox.Open:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(escrito.parent)))
 
+    @Slot()
+    def _on_threshold_edited(self, _value: float) -> None:
+        """The operator moved the spinner, so the threshold is no longer auto."""
+        self._threshold_origin = ""
+
+    @Slot()
+    def _on_delivery_report(self) -> None:
+        """Write the document that goes out with the delivery.
+
+        Everything in it was already computed; what was missing was assembling
+        it into something you can hand over or check before sending.
+        """
+        if not self._analysis_items:
+            self._error("Primero ejecuta un análisis (F5).")
+            return
+
+        cfg = self.sidebar.get_config()
+        # Recompute so the report always matches what the preview shows.
+        if not self._apply_preview():
+            self._error("No se pudo preparar la vista previa para el informe.")
+            return
+
+        coverage = self._coverage or compute_coverage(
+            self._analysis_items, spatial_calc=self.spatial_calc
+        )
+        plan = self.renamer.build_preview_plan(self._analysis_items, cfg.folder or "")
+        proyecto = self._project_store.find(self.config_manager.config.active_project)
+
+        try:
+            documento = build_delivery_report(
+                self._analysis_items,
+                coverage,
+                project_name=(proyecto.name if proyecto else ""),
+                folder=cfg.folder or "",
+                kml=self._loaded_kml_path or cfg.kml_file or "",
+                threshold=cfg.threshold,
+                threshold_method=self._threshold_origin,
+                plan=plan,
+            )
+        except Exception as exc:
+            logger.exception("No se pudo construir el informe de entrega")
+            self._error(f"No se pudo construir el informe: {exc}")
+            return
+
+        sugerido = os.path.join(
+            cfg.folder or str(data_dir()), report_filename(cfg.folder or "")
+        )
+        destino, _ = QFileDialog.getSaveFileName(
+            self, "Guardar informe de entrega", sugerido, "HTML (*.html);;Todos los archivos (*.*)"
+        )
+        if not destino:
+            return
+        try:
+            escrito = write_delivery_report(destino, documento)
+        except OSError as exc:
+            self._error(f"No se pudo escribir el informe: {exc}")
+            return
+
+        self.status_message.setText(f"Informe de entrega guardado en {escrito}.")
+        respuesta = QMessageBox.information(
+            self,
+            "Informe de entrega",
+            f"Guardado en:\n{escrito}\n\n"
+            "Ábrelo en el navegador para revisarlo o imprimirlo a PDF "
+            "(Ctrl+P → Guardar como PDF).",
+            QMessageBox.Open | QMessageBox.Ok,
+            QMessageBox.Ok,
+        )
+        if respuesta == QMessageBox.Open:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(escrito)))
+
     def _folder_outside_active_project(self, folder: str) -> Optional[Project]:
         """Active corridor when ``folder`` does not belong to it, else ``None``."""
         name = self.config_manager.config.active_project
@@ -666,6 +748,8 @@ class MainWindow(QMainWindow):
         self.sidebar.project_changed.connect(self._on_project_changed)
         self.sidebar.save_project_requested.connect(self._save_current_as_project)
         self.sidebar.threshold_spin.valueChanged.connect(self._on_preview_params_changed)
+        # Only a human edit reaches this: _apply_threshold_value blocks signals.
+        self.sidebar.threshold_spin.valueChanged.connect(self._on_threshold_edited)
         self.sidebar.suffix_edit.textChanged.connect(self._on_preview_params_changed)
         self.sidebar.folder_selector.changed.connect(self._on_folder_changed)
         self.sidebar.kml_selector.changed.connect(lambda _t: self._update_workflow_banner())
@@ -1435,6 +1519,7 @@ class MainWindow(QMainWindow):
             parts.append(f"{duplicates} duplicadas detectadas")
         if applied_threshold is not None:
             method_label = _METHOD_LABELS.get(method, method)
+            self._threshold_origin = method_label
             parts.append(f"umbral aplicado {applied_threshold:.1f} m ({method_label})")
         self.progress_bar.setValue(100)
         # Unlocked apply: finished runs before WorkerController.clear.
@@ -1571,6 +1656,7 @@ class MainWindow(QMainWindow):
         self.sidebar.set_histogram(distances, threshold)
 
         method_label = _METHOD_LABELS.get(method, method)
+        self._threshold_origin = method_label
         self.status_message.setText(
             f"Umbral automático: {threshold:.1f} m · {method_label} · "
             f"{samples} muestras · mediana {median_d:.1f} m · P90 {p90:.1f} m."
