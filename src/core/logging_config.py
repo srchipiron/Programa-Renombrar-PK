@@ -3,10 +3,29 @@ Centralized logging configuration for the application.
 """
 import logging
 import logging.handlers
-import os
+import sys
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
+
+
+def _harden_console_encoding() -> None:
+    """Stop unencodable glyphs from blowing up console logging.
+
+    Coverage and rename warnings carry PK typography (``≥``, ``·``, ``→``).
+    When stderr is redirected to a pipe or file, Windows picks the ANSI code
+    page and ``logging`` raises ``UnicodeEncodeError``, replacing the message
+    with a "--- Logging error ---" dump. Switching the error handler keeps the
+    line (escaped) whatever the code page is; the file handlers stay UTF-8.
+    """
+    for stream in (sys.stderr, sys.stdout):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(errors="backslashreplace")
+        except (ValueError, OSError):  # pragma: no cover - exotic streams
+            continue
 
 class LoggingManager:
     """Manages application logging with rotation and structured output."""
@@ -18,6 +37,7 @@ class LoggingManager:
     
     def _setup_logging(self) -> None:
         """Configure logging with both file and console handlers."""
+        _harden_console_encoding()
         # Create logs directory
         self.log_dir.mkdir(exist_ok=True)
         
@@ -73,17 +93,12 @@ class LoggingManager:
         # Suppress noisy third-party loggers
         logging.getLogger('PIL').setLevel(logging.WARNING)
         logging.getLogger('shapely').setLevel(logging.WARNING)
-        logging.getLogger('fastkml').setLevel(logging.WARNING)
     
     @staticmethod
     def get_logger(name: str) -> logging.Logger:
         """Get a logger instance for a specific module."""
         return logging.getLogger(name)
     
-    def set_level(self, level: str) -> None:
-        """Update logging level."""
-        self.log_level = getattr(logging, level.upper(), logging.INFO)
-        logging.getLogger().setLevel(self.log_level)
         
         # Update file handler level
         for handler in logging.getLogger().handlers:
@@ -101,8 +116,3 @@ def initialize_logging(log_dir: str = "logs", log_level: str = "INFO") -> None:
 def get_logger(name: str) -> logging.Logger:
     """Get a logger instance."""
     return LoggingManager.get_logger(name)
-
-def set_log_level(level: str) -> None:
-    """Update the logging level."""
-    if _logging_manager:
-        _logging_manager.set_level(level)
