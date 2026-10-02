@@ -12,7 +12,7 @@ from __future__ import annotations
 
 #: Kept in step with the newest changelog heading in the README and with
 #: the fallback in installer.iss; tests/test_version.py asserts all three.
-__version__ = "3.9.2"
+__version__ = "3.10.0"
 
 APP_NAME = "Renombrador PKS"
 #: Kept in the window title: the operators call it by the year.

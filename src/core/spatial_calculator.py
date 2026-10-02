@@ -976,7 +976,8 @@ class SpatialCalculator:
         p = Point(self._to_metric(lon, lat))
         return self._axis_metric.distance(p)
 
-    def _parse_pk_from_name(self, name: str) -> Optional[float]:
+    @staticmethod
+    def parse_pk_name(name: str) -> Optional[float]:
         """Parse chainage from PK-style names only.
 
         Accepts ``12+034`` / ``PK-12+034`` and pure numeric labels after
@@ -992,3 +993,5 @@ class SpatialCalculator:
         if re.fullmatch(r'\d+', clean):
             return float(clean)
         return None
+
+    _parse_pk_from_name = parse_pk_name

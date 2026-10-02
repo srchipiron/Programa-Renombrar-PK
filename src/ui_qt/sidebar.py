@@ -133,6 +133,7 @@ class Sidebar(QWidget):
     generate_map_requested = Signal()
     auto_threshold_requested = Signal()
     open_folder_requested = Signal()
+    detect_kml_requested = Signal()
     project_changed = Signal(str)
     save_project_requested = Signal()
 
@@ -207,6 +208,14 @@ class Sidebar(QWidget):
             file_filter="Datos espaciales (*.kml *.kmz *.geojson *.json);;Todos los archivos (*.*)",
         )
         layout.addWidget(self.kml_selector)
+
+        self.detect_kml_btn = QPushButton("Detectar KML de la obra")
+        self.detect_kml_btn.setToolTip(
+            "Busca en la carpeta de la obra y reconoce por su contenido cuál es la "
+            "traza y cuáles son los vertederos, sin fiarse del nombre del fichero."
+        )
+        self.detect_kml_btn.clicked.connect(self.detect_kml_requested)
+        layout.addWidget(self.detect_kml_btn)
 
         layout.addWidget(_hline())
 

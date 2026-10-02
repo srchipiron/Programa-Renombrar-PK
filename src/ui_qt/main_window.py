@@ -38,6 +38,7 @@ from ..core.diagnostics import (
     write_diagnostics,
 )
 from ..core.geojson_export import export_analysis_geojson
+from ..core.kml_profile import KmlRecommendation, describe, unregistered_landmarks
 from ..core.models import PhotoItem
 from ..core.naming import resolve_suffix
 from ..core.paths import data_dir
@@ -68,6 +69,7 @@ from .worker_controller import WorkerController
 from .workers import (
     AnalysisWorker,
     AutoThresholdWorker,
+    KmlDiscoveryWorker,
     RenameWorker,
     UndoHistoryWorker,
     UndoWorker,
@@ -115,6 +117,10 @@ class MainWindow(QMainWindow):
 
         self.spatial_calc = SpatialCalculator()
         self.renamer = RenamerLogic(self.spatial_calc)
+        # Create only the work folders the KML implies: the classic tree is
+        # one corridor's convention and littered the others (see work_roots).
+        self.renamer.adaptive_structure = True
+        self._detect_is_auto = False
         self._sync_renamer_settings()
         self._worker_ctl = WorkerController(
             on_started=self._on_worker_started,
@@ -464,12 +470,90 @@ class MainWindow(QMainWindow):
         if not folder:
             return
         match = self._project_store.match_for_path(folder)
-        if match is None or match.name == self.config_manager.config.active_project:
+        if match is not None and match.name != self.config_manager.config.active_project:
+            self._apply_project(match, clear_analysis=True)
+            self.status_message.setText(
+                f"Obra detectada por la ruta: {match.name}. Se han cargado su traza y ajustes."
+            )
+        # Nothing chose a trace (no project matched, or it has none): recognise
+        # it from the files around the folder rather than leaving it blank.
+        if not self.sidebar.kml_selector.value() and os.path.isdir(folder):
+            self._start_kml_discovery(folder, auto=True)
+
+    @Slot()
+    def _on_detect_kml(self) -> None:
+        folder = self.sidebar.folder_selector.value()
+        if not folder or not os.path.isdir(folder):
+            self._error("Elige primero la carpeta de imágenes: el KML se busca en la obra a la que pertenece.")
             return
-        self._apply_project(match, clear_analysis=True)
-        self.status_message.setText(
-            f"Obra detectada por la ruta: {match.name}. Se han cargado su traza y ajustes."
-        )
+        self._start_kml_discovery(folder, auto=False)
+
+    def _start_kml_discovery(self, folder: str, *, auto: bool) -> None:
+        if self._worker_ctl.busy:
+            return
+        self._detect_is_auto = auto
+        worker = KmlDiscoveryWorker(folder)
+        worker.finished.connect(self._on_kml_discovered)
+        worker.failed.connect(self._on_worker_failed)
+        self._worker_ctl.start(worker, "Reconociendo los KML de la obra…")
+
+    @Slot(object)
+    def _on_kml_discovered(self, recommendation: KmlRecommendation) -> None:
+        """Apply what was recognised; say so, never silently."""
+        self.sidebar.set_busy(False)
+        self.progress_bar.setRange(0, 100)
+        auto = self._detect_is_auto
+        trace = recommendation.trace
+        if trace is None:
+            texto = "No se ha reconocido ninguna traza (KML con puntos de PK) en la obra."
+            if auto:
+                self.status_message.setText(texto)
+            else:
+                self._info(texto + "\n\n" + describe(recommendation))
+            return
+
+        self.sidebar.set_values(kml_file=trace.path)
+        cfg = self.config_manager.config
+        if recommendation.landmark_kmls and (not auto or not cfg.landmark_kmls):
+            merged = list(cfg.landmark_kmls)
+            for path in recommendation.landmark_paths:
+                if path not in merged:
+                    merged.append(path)
+            self.config_manager.update_config(landmark_kmls=merged)
+        logger.info("KML reconocidos:\n%s", describe(recommendation))
+
+        # Landfills the trace KML defines but the job does not know about: their
+        # photos would not reach their own folder, and nothing else says so.
+        missing = unregistered_landmarks(trace, self._registered_landmark_names())
+        if missing:
+            logger.warning("Vertederos del KML sin registrar en la obra: %s", ", ".join(missing))
+
+        if auto:
+            extra = (
+                f" y {len(recommendation.landmark_kmls)} de vertederos"
+                if recommendation.landmark_kmls else ""
+            )
+            aviso = f" · {len(missing)} vertedero(s) del KML sin registrar" if missing else ""
+            self.status_message.setText(f"KML reconocidos: traza «{trace.name}»{extra}{aviso}.")
+        else:
+            texto = "Esto es lo que se ha reconocido por el contenido:\n\n" + describe(recommendation)
+            if missing:
+                texto += (
+                    f"\n\nEl KML de traza define {len(missing)} punto(s) que no son PK y que la "
+                    f"obra no tiene registrados como vertederos:\n  " + ", ".join(missing)
+                    + "\n\nSus fotos no irían a su carpeta de vertedero."
+                )
+            self._info(texto)
+
+    def _registered_landmark_names(self) -> set:
+        """Every landfill name the job already knows, however it was registered."""
+        cfg = self.config_manager.config
+        names = {str(e.get("name", "")) for e in (cfg.extra_landmarks or [])}
+        for group in cfg.landmark_groups or []:
+            names.add(str(group.get("name", "")))
+            names.update(str(m) for m in (group.get("members") or []))
+        names.update(self.spatial_calc._landmark_names)
+        return {n for n in names if n.strip()}
 
     @Slot()
     def _save_current_as_project(self) -> None:
@@ -746,6 +830,7 @@ class MainWindow(QMainWindow):
         self.sidebar.generate_map_requested.connect(self._on_generate_map)
         self.sidebar.auto_threshold_requested.connect(self._on_auto_threshold)
         self.sidebar.open_folder_requested.connect(self._open_folder)
+        self.sidebar.detect_kml_requested.connect(self._on_detect_kml)
         self.sidebar.project_changed.connect(self._on_project_changed)
         self.sidebar.save_project_requested.connect(self._save_current_as_project)
         self.sidebar.threshold_spin.valueChanged.connect(self._on_preview_params_changed)
@@ -872,13 +957,14 @@ class MainWindow(QMainWindow):
         if cfg.kml_file:
             self._push_recent("recent_kmls", cfg.kml_file)
 
-        # Create June-style folders immediately (even if empty).
+        # The work folders are created once the analysis has reloaded the KML
+        # (see _on_analysis_finished): their set depends on what the KML defines,
+        # and here the calculator may still hold the previous one.
         try:
             self._apply_extra_landmarks()
             self.renamer.set_viaduct_pks(self.config_manager.config.viaduct_pks)
-            self.renamer.ensure_work_folders(cfg.folder)
         except OSError as exc:
-            logger.warning("No se pudieron crear carpetas de trabajo en %s: %s", cfg.folder, exc)
+            logger.warning("No se pudieron preparar los vertederos en %s: %s", cfg.folder, exc)
 
         worker = AnalysisWorker(
             cfg.folder,
@@ -1720,8 +1806,9 @@ class MainWindow(QMainWindow):
             self._error(
                 f"«{nombre}» no contiene una traza (LineString) ni suficientes "
                 "puntos con PK para deducirla.\n\n"
-                "Todos los puntos kilométricos saldrían a PK-0+000. Revisa el "
-                "KML en la barra lateral antes de renombrar."
+                "Todos los puntos kilométricos saldrían a PK-0+000.\n\n"
+                "Pulsa «Detectar KML de la obra» para que el programa reconozca "
+                "cuál es la traza."
             )
             return
         if result.get("kml_axis_trustworthy") is False:
@@ -1735,7 +1822,9 @@ class MainWindow(QMainWindow):
                 f"La traza de «{nombre}» no reproduce sus propios puntos "
                 f"kilométricos: se desvía {medida} de ellos.\n\n"
                 "Los PK calculados no serían de fiar. Suele significar que el "
-                "KML es el levantamiento del cliente y no el de la traza."
+                "KML es el levantamiento del cliente y no el de la traza.\n\n"
+                "Pulsa «Detectar KML de la obra» para que el programa reconozca "
+                "cuál es la traza."
             )
 
     def _info(self, message: str) -> None:

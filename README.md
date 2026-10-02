@@ -257,6 +257,28 @@ python -m pytest tests/ --cov=src --cov-report=html
 
 ## 📝 Registro de Cambios
 
+### v3.10.0 - El programa reconoce los KML y la estructura sigue a la obra
+- 🔎 **Reconocimiento de KML por su contenido** (`core/kml_profile.py`, ADR-015): traza,
+  vertederos, levantamiento del cliente o vacío, sin fiarse del nombre. Sobre los 23 KML
+  reales acierta **23 de 23**, incluida la trampa: el levantamiento de 27 MB tiene 370 PK y
+  habría ganado por recuento, pero se descarta porque su geometría se desvía 18 553 m
+- 🖱️ **«Detectar KML de la obra»** en la barra lateral, y reconocimiento automático al elegir
+  una carpeta sin KML: rellena la traza y registra los KML de vertederos. Cuenta qué ha
+  encontrado y qué ha ignorado, con el motivo. Corre en un hilo (el fichero de 27 MB tarda
+  3-4,5 s por red; el resto 50-200 ms)
+- 📁 **La estructura de carpetas sigue a la obra.** `OTROS/VIADUCTOS/VERTEDEROS` es la
+  convención de Torre Pacheco; Pulpí-Vera se entrega como `Enlace/Traza` y su KML no define
+  vertederos ni viaductos. Ahora `VERTEDEROS` sólo se crea si el KML define vertederos y
+  `VIADUCTOS` si hay PK de viaducto; `OTROS` sólo acompaña a alguno. Pulpí-Vera y Lorca-Pulpí
+  dejan de recibir carpetas vacías que nunca han tenido
+- ⏱️ Las carpetas se crean **después** de analizar, no antes: en F5 el calculador aún podía
+  tener el KML de la obra anterior y habría dado el plan equivocado
+- ⚠️ **Discrepancias señaladas, no corregidas en silencio:** los vertederos que el KML de
+  traza define y la obra no tiene registrados (sus fotos no irían a su carpeta)
+- ✅ **`run_checks.bat` usa el `venv`**: el Python del sistema perdió sus paquetes y la QA
+  habría dejado de funcionar; ahora corre sobre el mismo entorno con el que se lanza la app
+- 🧪 517 tests (antes 458)
+
 ### v3.9.2 - El KML equivocado deja de pasar desapercibido
 - 🚨 **Aviso si la traza no es de fiar.** Elegir el KML que no lleva traza hacía que
   *todos* los PK salieran a 0 sin que nada lo dijera; y peor, un KML cuya traza no

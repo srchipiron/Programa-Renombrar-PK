@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from PySide6.QtCore import QObject, Signal
 
+from ..core.kml_profile import discover_kmls, recommend
 from ..core.models import PhotoItem
 from ..core.renamer_logic import RenamerLogic, compute_suggested_threshold
 from ..core.spatial_calculator import SpatialCalculator
@@ -44,6 +45,25 @@ class _BaseWorker(QObject):
 
     def is_cancelled(self) -> bool:
         return self._cancel_event.is_set()
+
+
+class KmlDiscoveryWorker(_BaseWorker):
+    """Recognises the trace and landmark KML around a delivery folder.
+
+    Reading them is not free: verifying the client's 27 MB survey file costs
+    several seconds over SMB, which is why this does not run on the UI thread.
+    """
+
+    def __init__(self, folder: str, parent: Optional[QObject] = None):
+        super().__init__(parent)
+        self.folder = folder
+
+    def run(self) -> None:
+        try:
+            self.finished.emit(recommend(discover_kmls(self.folder)))
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("KML discovery failed")
+            self.failed.emit(str(exc))
 
 
 class AnalysisWorker(_BaseWorker):

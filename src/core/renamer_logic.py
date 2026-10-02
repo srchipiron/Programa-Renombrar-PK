@@ -612,6 +612,9 @@ _WORK_TYPE_GROUPS: Tuple[Tuple[str, ...], ...] = (
 )
 _OTHERS_RANK = len(_WORK_TYPE_GROUPS)
 
+#: Torre Pacheco's delivery tree; what the program created for every job.
+_CLASSIC_WORK_ROOTS = ("OTROS", "VIADUCTOS", "VERTEDEROS")
+
 
 def path_work_type_rank(path: str) -> int:
     """Return 0 vertedero…, 1 viaducto/puente…, or ``_OTHERS_RANK`` (otros)."""
@@ -863,6 +866,9 @@ class RenamerLogic:
         self.max_workers = max(1, int(max_workers))
         self.tukey_multiplier = float(tukey_multiplier)
         self.viaduct_pks: Set[str] = set()
+        #: Create only the work folders the KML implies (see work_roots).
+        #: Off by default so the classic tree stays what direct callers get.
+        self.adaptive_structure: bool = False
 
     def set_viaduct_pks(self, pks: List[str]) -> None:
         """PK labels routed to VIADUCTOS/ (from June template or config)."""
@@ -1212,28 +1218,49 @@ class RenamerLogic:
         return valid_items
 
 
+    def work_roots(self, *, has_landmarks: bool) -> Tuple[str, ...]:
+        """Top-level work folders this job needs.
+
+        The classic tree (``OTROS``, ``VIADUCTOS``, ``VERTEDEROS``) is Torre
+        Pacheco's convention, and it is what real deliveries there contain.
+        Other corridors do not have it: Pulpí-Vera is delivered as
+        ``Enlace/Traza`` and its KML defines no landfills and no viaducts, so
+        creating the classic tree there only litters a client folder.
+
+        With ``adaptive_structure`` off (the default) this is always the classic
+        tree. With it on, a folder exists only if the job implies it: landmarks
+        in the KML give ``VERTEDEROS``, configured viaduct PK give
+        ``VIADUCTOS``, and ``OTROS`` only accompanies one of those. Photos that
+        match none stay in the job root, which is where ``resolve_output_dir``
+        already sends them.
+        """
+        if not self.adaptive_structure:
+            return _CLASSIC_WORK_ROOTS
+        roots: List[str] = []
+        if self.viaduct_pks:
+            roots.append("VIADUCTOS")
+        if has_landmarks:
+            roots.append("VERTEDEROS")
+        if roots:
+            roots.insert(0, "OTROS")
+        return tuple(roots)
+
     def ensure_work_folders(
         self,
         base_folder: str,
         *,
         landmark_names: Optional[List[str]] = None,
     ) -> List[str]:
-        """Create June-style work folders even when they stay empty.
+        """Create the job's work folders even when they stay empty.
 
-        Always ensures ``OTROS``, ``VIADUCTOS`` and ``VERTEDEROS``. Under
-        ``VERTEDEROS`` creates one subfolder per configured landmark / group.
-        Returns the list of paths that were created or already existed.
+        See :meth:`work_roots` for which ones. Under ``VERTEDEROS`` creates one
+        subfolder per configured landmark / group. Returns the list of paths
+        that were created or already existed.
         """
         if not base_folder or not os.path.isdir(base_folder):
             return []
 
         created: List[str] = []
-        roots = ("OTROS", "VIADUCTOS", "VERTEDEROS")
-        for name in roots:
-            path = os.path.join(base_folder, name)
-            os.makedirs(path, exist_ok=True)
-            created.append(path)
-
         vertederos_root = os.path.join(base_folder, "VERTEDEROS")
         subfolders: List[str] = []
 
@@ -1284,6 +1311,13 @@ class RenamerLogic:
             ):
                 continue
             subfolders.append(clean)
+
+        # Decided here, after the landmarks are known: whether VERTEDEROS/ is
+        # needed depends on whether the KML actually defines any.
+        for name in self.work_roots(has_landmarks=bool(subfolders)):
+            path = os.path.join(base_folder, name)
+            os.makedirs(path, exist_ok=True)
+            created.append(path)
 
         # Deduplicate preserving order.
         seen: Set[str] = set()

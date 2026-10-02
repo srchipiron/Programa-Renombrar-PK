@@ -67,9 +67,15 @@ Los workers construyen **sus propias instancias** de `SpatialCalculator` y
   `QWebEngineView` creado en un test sobrevive hasta el cierre del intérprete y
   Chromium tira el proceso *después* de que todo pase en verde. Salía 139 con
   «458 passed». Por eso los tests del mapa no instancian Chromium.
-- **Los tests corren con el Python del sistema**, no con `venv\`. Hoy coinciden;
-  si divergen, `run_checks.bat` daría verde sobre otro entorno. El CI usa 3.12 y
-  el desarrollo va con 3.14.
+- **Los tests corren con el `venv\`** (`run_checks.bat` lo prefiere). El Python del
+  sistema llegó a perder sus paquetes y la QA habría dejado de funcionar. El CI
+  usa 3.12 y el desarrollo va con 3.14.
+- **Cada KML es de un tipo y el nombre no lo dice**: traza, vertederos, levantamiento
+  del cliente o vacío (`core/kml_profile.py`, ADR-015). El levantamiento de Torre
+  Pacheco tiene 370 PK y no es la traza; se distingue por la comprobación de
+  calibración, no por contar puntos.
+- **Las carpetas de trabajo dependen de la obra** (`RenamerLogic.work_roots`): el
+  trío `OTROS/VIADUCTOS/VERTEDEROS` es la convención de Torre Pacheco, no universal.
 - **`config.json` y `proyectos/` no se versionan**: llevan rutas UNC y nombres de
   cliente. `config.example.json` sí, y de ahí se crea el primero.
 - **`fastkml` se eliminó**: su única llamada fallaba en todas las cargas desde
