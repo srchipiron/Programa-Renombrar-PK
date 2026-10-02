@@ -277,7 +277,9 @@ python -m pytest tests/ --cov=src --cov-report=html
   traza define y la obra no tiene registrados (sus fotos no irían a su carpeta)
 - ✅ **`run_checks.bat` usa el `venv`**: el Python del sistema perdió sus paquetes y la QA
   habría dejado de funcionar; ahora corre sobre el mismo entorno con el que se lanza la app
-- 🧪 517 tests (antes 458)
+- 💾 Los KML de vertederos reconocidos se **guardan en la obra activa**: antes sólo iban a la
+  configuración y al cambiar de obra se perdían (`Vertederos.kml`/TP01 no estaba en ninguna)
+- 🧪 521 tests (antes 458)
 
 ### v3.9.2 - El KML equivocado deja de pasar desapercibido
 - 🚨 **Aviso si la traza no es de fiar.** Elegir el KML que no lleva traza hacía que

@@ -520,6 +520,7 @@ class MainWindow(QMainWindow):
                 if path not in merged:
                     merged.append(path)
             self.config_manager.update_config(landmark_kmls=merged)
+            self._remember_landmark_kmls_in_project(merged)
         logger.info("KML reconocidos:\n%s", describe(recommendation))
 
         # Landfills the trace KML defines but the job does not know about: their
@@ -544,6 +545,25 @@ class MainWindow(QMainWindow):
                     + "\n\nSus fotos no irían a su carpeta de vertedero."
                 )
             self._info(texto)
+
+    def _remember_landmark_kmls_in_project(self, paths: list) -> None:
+        """Keep recognised landmark files on the active project.
+
+        Applying a project overwrites the config's landmark files with its own
+        list, so a file registered only in the config was lost on the next
+        switch: TP01 in ``Vertederos.kml`` was on no project at all. Only that
+        one list is written; nothing else of the project is touched.
+        """
+        name = self.config_manager.config.active_project
+        project = self._project_store.find(name) if name else None
+        if project is None or list(project.landmark_kmls) == list(paths):
+            return
+        project.landmark_kmls = list(paths)
+        try:
+            self._project_store.save(project)
+            logger.info("KML de vertederos guardados en la obra «%s»", project.name)
+        except OSError as exc:
+            logger.warning("No se pudo guardar la obra «%s»: %s", project.name, exc)
 
     def _registered_landmark_names(self) -> set:
         """Every landfill name the job already knows, however it was registered."""

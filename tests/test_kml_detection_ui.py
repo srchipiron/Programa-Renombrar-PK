@@ -165,6 +165,46 @@ class KmlDetectionWindowTests(unittest.TestCase):
         )
         self.assertTrue({"Caliche", "Palomares"} <= self.window._registered_landmark_names())
 
+    def _obra_activa(self):
+        from src.core.projects import Project
+
+        self.window._project_store.save(Project(name="Obra X", root=str(self.obra)))
+        self.window.config_manager.update_config(active_project="Obra X")
+
+    def test_recognised_landmark_files_are_kept_on_the_active_project(self) -> None:
+        """Otherwise the next project switch overwrote them with an empty list."""
+        self._obra_activa()
+        self.window._detect_is_auto = False
+        self.window._on_kml_discovered(self._recomendacion())
+
+        guardada = self.window._project_store.find("Obra X")
+        self.assertEqual(guardada.landmark_kmls, [str(self.vertederos)])
+
+    def test_they_survive_switching_away_and_back(self) -> None:
+        self._obra_activa()
+        self.window._on_kml_discovered(self._recomendacion())
+        self.window._apply_project(self.window._project_store.find("Obra X"), clear_analysis=True)
+
+        self.assertEqual(self.window.config_manager.config.landmark_kmls, [str(self.vertederos)])
+
+    def test_only_the_landmark_list_of_the_project_is_touched(self) -> None:
+        from src.core.projects import Project
+
+        self.window._project_store.save(
+            Project(name="Obra X", root=str(self.obra), threshold=170.1, suffix="[PK]-AGO26",
+                    viaduct_pks=["22+600"])
+        )
+        self.window.config_manager.update_config(active_project="Obra X")
+        self.window._on_kml_discovered(self._recomendacion())
+
+        guardada = self.window._project_store.find("Obra X")
+        self.assertEqual((guardada.threshold, guardada.suffix, guardada.viaduct_pks),
+                         (170.1, "[PK]-AGO26", ["22+600"]))
+
+    def test_without_an_active_project_nothing_is_written(self) -> None:
+        self.window._on_kml_discovered(self._recomendacion())
+        self.assertEqual(self.window._project_store.load_all(), [])
+
     def test_the_button_without_a_folder_asks_for_one(self) -> None:
         self.window._on_detect_kml()
         self.assertEqual(len(self.avisos), 1)
